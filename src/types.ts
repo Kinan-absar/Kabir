@@ -1,5 +1,5 @@
 export interface Sale {
-  id?: number;
+  id?: string;
   date: string;
   day: string;
   opening_cash: number;
@@ -20,18 +20,35 @@ export interface Sale {
 }
 
 export interface Expense {
-  id?: number;
+  id?: string;
   date: string;
   invoice_no: string;
+  supplier_id?: string;
   supplier_name: string;
   item_name: string;
   vat_number: string;
   total_debit: number;
+  total: number; // Renamed from grand_total
   vat_debit: number;
-  grand_total: number;
   credit: number;
   total_w_vat_credit: number;
   paid_by: string;
 }
+
+export interface Supplier {
+  id?: string;
+  name: string;
+  vat_number?: string;
+}
+
+export interface MonthlyAttachment {
+  id?: string;
+  month_year: string;
+  file_url: string;
+  file_name: string;
+  uploaded_at: string;
+}
+
+export type UserRole = 'admin' | 'employee';
 
 export const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
