@@ -2,6 +2,7 @@ import {
   collection,
   addDoc,
   getDocs,
+  getDoc,
   doc,
   deleteDoc,
   setDoc,
@@ -12,6 +13,25 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { Sale, Expense, Supplier, MonthlyAttachment } from './types';
+
+// ── User Role ──────────────────────────────────────────────────────────────
+// Reads /users/{uid} document with field: role = 'admin' | 'employee'
+// Create these documents manually in Firebase Console for each user.
+
+export type UserRole = 'admin' | 'employee';
+
+export const getUserRole = async (uid: string): Promise<UserRole> => {
+  try {
+    const snap = await getDoc(doc(db, 'users', uid));
+    if (snap.exists()) {
+      const role = snap.data().role;
+      if (role === 'admin' || role === 'employee') return role;
+    }
+  } catch (e) {
+    console.warn('Could not fetch user role, defaulting to employee:', e);
+  }
+  return 'employee'; // safest default
+};
 
 // ── Sales ──────────────────────────────────────────────────────────────────
 

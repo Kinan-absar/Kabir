@@ -1,21 +1,30 @@
 import React, { useState, useEffect } from 'react';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { auth } from './firebase';
 import { 
   Plus, Trash2, LayoutDashboard, Receipt, TrendingUp,
   Calendar, DollarSign, Users, FileText, Search,
-  Edit2, Save, X, Shield, Upload, ExternalLink,
+  Edit2, Save, X, Shield, Upload, ExternalLink, LogOut,
 } from 'lucide-react';
-import { Sale, Expense, Supplier, MonthlyAttachment, UserRole, DAYS } from './types';
+import { Sale, Expense, Supplier, MonthlyAttachment, DAYS } from './types';
 import {
   getSales, saveSale, deleteSale as deleteSaleDb,
   getExpenses, saveExpense, deleteExpense as deleteExpenseDb,
   getSuppliers, saveSupplier, deleteSupplier as deleteSupplierDb,
   getAttachments, saveAttachment, deleteAttachment as deleteAttachmentDb,
   getMonthlyCash, saveMonthlyCashData,
+  getUserRole, UserRole,
 } from './dataService';
+import AuthScreen from './AuthScreen';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'expenses' | 'suppliers'>('dashboard');
-  const [userRole, setUserRole] = useState<UserRole>('admin');
+  // ── Auth state ────────────────────────────────────────────────────────────
+  const [authReady, setAuthReady]   = useState(false);
+  const [user, setUser]             = useState<User | null>(null);
+  const [userRole, setUserRole]     = useState<UserRole>('employee');
+
+  // ── App state ─────────────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'expenses' | 'suppliers'>('sales');
   const [sales, setSales] = useState<Sale[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -34,9 +43,27 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Listen to Firebase Auth state
   useEffect(() => {
-    Promise.all([fetchSales(), fetchExpenses(), fetchSuppliers()]).finally(() => setLoading(false));
+    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUser(firebaseUser);
+      if (firebaseUser) {
+        const role = await getUserRole(firebaseUser.uid);
+        setUserRole(role);
+        setActiveTab(role === 'admin' ? 'dashboard' : 'sales');
+      } else {
+        setUserRole('employee');
+      }
+      setAuthReady(true);
+    });
+    return () => unsub();
   }, []);
+
+  // Load data once the user is confirmed logged in
+  useEffect(() => {
+    if (!user) return;
+    Promise.all([fetchSales(), fetchExpenses(), fetchSuppliers()]).finally(() => setLoading(false));
+  }, [user]);
 
   useEffect(() => {
     if (selectedPeriod !== 'all' && !selectedPeriod.startsWith('Q')) {
@@ -97,7 +124,7 @@ export default function App() {
   const handleAddExpense = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const total = Number(fd.get('total'));
+    const net = Number(fd.get('total_debit'));
     const supplierId = fd.get('supplier_id') as string;
     const supplier = suppliers.find(s => s.id === supplierId);
     const expense: Expense = {
@@ -107,7 +134,9 @@ export default function App() {
       supplier_name: supplier ? supplier.name : (fd.get('supplier_name') as string || ''),
       item_name: fd.get('item_name') as string,
       vat_number: fd.get('vat_number') as string,
-      total, vat_debit: total - total / 1.15, total_debit: total / 1.15,
+      total_debit: net,
+      vat_debit: net * 0.15,
+      total: net * 1.15,
       credit: Number(fd.get('credit') || 0),
       total_w_vat_credit: Number(fd.get('total_w_vat_credit') || 0),
       paid_by: fd.get('paid_by') as string,
@@ -161,7 +190,7 @@ export default function App() {
   const totalSalesSum = filteredSales.reduce((a, s) => a + calcTotal(s), 0);
   const totalCashSalesSum = filteredSales.reduce((a, s) => a + (s.total_cash_sales||0), 0);
   const totalExpensesSum = filteredExpenses.reduce((a, e) => a + (e.total||0), 0);
-  const totalCashExpensesSum = filteredExpenses.reduce((a, e) => a + (e.paid_by?.toUpperCase()==='CASH' ? (e.total||0) : 0), 0);
+  const totalCashExpensesSum = filteredExpenses.reduce((a, e) => a + (e.paid_by?.toLowerCase()==='cash' ? (e.total||0) : 0), 0);
 
   const Dashboard = () => {
     const totalCustomers = filteredSales.reduce((a, s) => a + (s.num_customers||0), 0);
@@ -253,11 +282,20 @@ export default function App() {
     </>);
   };
 
+  // ── Auth gate ─────────────────────────────────────────────────────────────
+  if (!authReady) return (
+    <div className="min-h-screen bg-stone-50 flex items-center justify-center">
+      <div className="w-10 h-10 border-4 border-emerald-900 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  if (!user) return <AuthScreen />;
+
   if (loading) return (
     <div className="min-h-screen bg-stone-50 flex items-center justify-center">
       <div className="text-center">
         <div className="w-10 h-10 border-4 border-emerald-900 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-stone-500 font-medium">Connecting to Firebase...</p>
+        <p className="text-stone-500 font-medium">Loading data...</p>
       </div>
     </div>
   );
@@ -277,15 +315,27 @@ export default function App() {
           <h1 className="text-xl font-bold tracking-tight">Al Kabir</h1>
         </div>
         <div className="space-y-2">
-          {[{id:'dashboard',label:'Dashboard',icon:<TrendingUp size={20}/>},{id:'sales',label:'Daily Sales',icon:<LayoutDashboard size={20}/>},{id:'expenses',label:'Expenses',icon:<Receipt size={20}/>}].map(tab=>(
+          {[{id:'sales',label:'Daily Sales',icon:<LayoutDashboard size={20}/>},{id:'expenses',label:'Expenses',icon:<Receipt size={20}/>},{id:'suppliers',label:'Suppliers',icon:<Users size={20}/>}].map(tab=>(
             <button key={tab.id} onClick={()=>setActiveTab(tab.id as any)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab===tab.id?'bg-emerald-900 text-white font-semibold shadow-md':'text-stone-500 hover:bg-stone-50'}`}>{tab.icon}<span>{tab.label}</span></button>
           ))}
-          {userRole==='admin'&&(<button onClick={()=>setActiveTab('suppliers')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab==='suppliers'?'bg-emerald-900 text-white font-semibold shadow-md':'text-stone-500 hover:bg-stone-50'}`}><Users size={20}/><span>Suppliers</span></button>)}
+          {userRole==='admin'&&(<button onClick={()=>setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab==='dashboard'?'bg-emerald-900 text-white font-semibold shadow-md':'text-stone-500 hover:bg-stone-50'}`}><TrendingUp size={20}/><span>Dashboard</span></button>)}
         </div>
         <div className="absolute bottom-8 left-6 right-6 space-y-4">
           <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200">
-            <div className="flex items-center gap-2 mb-2"><Shield size={14} className="text-stone-400"/><p className="text-[10px] text-stone-400 font-bold uppercase tracking-widest">User Role</p></div>
-            <div className="flex items-center justify-between"><span className="text-sm font-bold capitalize">{userRole}</span><button onClick={()=>setUserRole(userRole==='admin'?'employee':'admin')} className="text-[10px] bg-stone-200 px-2 py-1 rounded font-bold hover:bg-stone-300">Switch</button></div>
+            <div className="flex items-center gap-2 mb-2">
+              <Shield size={14} className="text-stone-400"/>
+              <p className="text-[10px] text-stone-400 font-bold uppercase tracking-widest">Signed In As</p>
+            </div>
+            <p className="text-xs font-semibold text-stone-700 truncate mb-1">{user.email}</p>
+            <div className="flex items-center justify-between">
+              <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${userRole==='admin' ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-200 text-stone-600'}`}>{userRole}</span>
+              <button
+                onClick={() => signOut(auth)}
+                className="flex items-center gap-1.5 text-[11px] font-bold text-rose-500 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded-lg transition-colors"
+              >
+                <LogOut size={12}/> Sign Out
+              </button>
+            </div>
           </div>
           <div className="p-4 bg-emerald-900 rounded-2xl text-white shadow-xl shadow-emerald-200">
             <p className="text-xs text-emerald-400/70 mb-1">{selectedPeriod==='all'?'Yearly':selectedPeriod.startsWith('Q')?'Quarterly':'Monthly'} Balance</p>
@@ -335,7 +385,7 @@ export default function App() {
                         <div className="flex items-center gap-3"><FileText size={24} className="text-stone-400"/><div><p className="font-bold text-sm">{att.file_name}</p><p className="text-[10px] text-stone-400 uppercase font-bold">Uploaded on {new Date(att.uploaded_at).toLocaleDateString()}</p></div></div>
                         <div className="flex items-center gap-2">
                           <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="p-2 text-stone-600 hover:bg-stone-200 rounded-lg"><ExternalLink size={18}/></a>
-                          {userRole==='admin'&&<button onClick={()=>handleDeleteAttachment(att.id!)} className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg"><Trash2 size={18}/></button>}
+                          <button onClick={()=>handleDeleteAttachment(att.id!)} className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg"><Trash2 size={18}/></button>
                         </div>
                       </div>
                     ))}</div>
@@ -371,7 +421,7 @@ export default function App() {
                     <table className="w-full text-left border-collapse border border-stone-200">
                       <thead className="sticky top-0 z-10 bg-stone-50 shadow-sm">
                         {activeTab==='sales'?(<tr className="border-b border-stone-200">{['Date','Day','Dining(Cash)','Dining(Card)','Jahez Bis','Jahez Bur','Keeta Bis','Keeta Bur','Hunger Bis','Hunger Bur','Ninja','Credit','Total Sales','Net','VAT','Disc','Cust','Avg','POS','Diff','Actions'].map(h=><th key={h} className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">{h}</th>)}</tr>)
-                        :activeTab==='expenses'?(<tr className="border-b border-stone-200">{['Date','Invoice #','Supplier','Item','VAT Number','Total','VAT (15%)','Net','Paid By','Actions'].map(h=><th key={h} className="px-3 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider border border-stone-200">{h}</th>)}</tr>)
+                        :activeTab==='expenses'?(<tr className="border-b border-stone-200">{['Date','Invoice #','Supplier','Item','VAT Number','Net (ex. VAT)','VAT (15%)','Total (inc. VAT)','Paid By','Actions'].map(h=><th key={h} className="px-3 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider border border-stone-200">{h}</th>)}</tr>)
                         :(<tr className="border-b border-stone-200"><th className="px-3 py-3 text-xs font-bold text-stone-500 uppercase border border-stone-200" colSpan={2}>Supplier Name</th><th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase border border-stone-200" colSpan={2}>VAT Number</th><th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase text-center border border-stone-200" colSpan={2}>Actions</th></tr>)}
                       </thead>
                       <tbody className="divide-y divide-stone-100">
@@ -417,7 +467,7 @@ export default function App() {
                                 <td className="px-2 py-2 text-right font-mono border border-stone-200">{calcAvg(ts,sale.num_customers).toFixed(2)}</td>
                                 <td className="px-2 py-2 text-right font-mono border border-stone-200">{(sale.pos_closing_report||0).toFixed(2)}</td>
                                 <td className={`px-2 py-2 text-right font-mono font-bold border border-stone-200 ${calcDiff(ts,sale.pos_closing_report)!==0?'text-rose-600':'text-stone-400'}`}>{calcDiff(ts,sale.pos_closing_report).toFixed(2)}</td>
-                                <td className="px-2 py-2 text-center border border-stone-200"><div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"><button type="button" onClick={()=>setEditingSaleId(sale.id!)} className="p-1 text-stone-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"><Edit2 size={12}/></button>{userRole==='admin'&&<button type="button" onClick={()=>handleDeleteSale(sale.id!)} className="p-1 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded"><Trash2 size={12}/></button>}</div></td>
+                                <td className="px-2 py-2 text-center border border-stone-200"><div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"><button type="button" onClick={()=>setEditingSaleId(sale.id!)} className="p-1 text-stone-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"><Edit2 size={12}/></button><button type="button" onClick={()=>handleDeleteSale(sale.id!)} className="p-1 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded"><Trash2 size={12}/></button></div></td>
                               </tr>
                             );
                           })}
@@ -457,13 +507,13 @@ export default function App() {
                                 </td>
                                 <td className="px-1 py-1 border border-stone-200"><input id="edit-item" name="item_name" type="text" defaultValue={expense.item_name} required className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"/></td>
                                 <td className="px-1 py-1 border border-stone-200"><input id="edit-vat" name="vat_number" type="text" value={editingSupplierVat} onChange={e=>setEditingSupplierVat(e.target.value)} className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"/></td>
-                                <td className="px-1 py-1 border border-stone-200"><input id="edit-total" name="total" type="number" step="0.01" defaultValue={expense.total} required className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md text-right font-bold"/></td>
+                                <td className="px-1 py-1 border border-stone-200"><input id="edit-total" name="total_debit" type="number" step="0.01" defaultValue={expense.total_debit} required className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md text-right font-bold"/></td>
                                 <td className="px-1 py-1 border border-stone-200 text-right text-[10px] text-stone-400">Auto</td>
                                 <td className="px-1 py-1 border border-stone-200 text-right text-[10px] text-stone-400">Auto</td>
-                                <td className="px-1 py-1 border border-stone-200"><select id="edit-paid" name="paid_by" defaultValue={expense.paid_by} className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"><option>Cash</option><option>Card</option><option>Transfer</option><option>WISSAM</option></select></td>
+                                <td className="px-1 py-1 border border-stone-200"><select id="edit-paid" name="paid_by" defaultValue={expense.paid_by} className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"><option>Cash</option><option>Transfer</option></select></td>
                                 <td className="px-1 py-1 border border-stone-200"><div className="flex gap-1 justify-center">
                                   <button type="button" onClick={()=>{
-                                    const total = Number((document.getElementById('edit-total') as HTMLInputElement)?.value);
+                                    const net = Number((document.getElementById('edit-total') as HTMLInputElement)?.value);
                                     const supplierId = (document.getElementById('edit-supplier') as HTMLSelectElement)?.value;
                                     const supplier = suppliers.find(s=>s.id===supplierId);
                                     const updated: Expense = {
@@ -473,7 +523,7 @@ export default function App() {
                                       supplier_name: supplier?.name ?? expense.supplier_name,
                                       item_name: (document.getElementById('edit-item') as HTMLInputElement)?.value,
                                       vat_number: (document.getElementById('edit-vat') as HTMLInputElement)?.value,
-                                      total, vat_debit: total - total/1.15, total_debit: total/1.15,
+                                      total_debit: net, vat_debit: net * 0.15, total: net * 1.15,
                                       credit: expense.credit||0, total_w_vat_credit: expense.total_w_vat_credit||0,
                                       paid_by: (document.getElementById('edit-paid') as HTMLSelectElement)?.value,
                                     };
@@ -490,11 +540,11 @@ export default function App() {
                                 <td className="px-4 py-2 text-stone-700 border border-stone-200">{expense.supplier_name}</td>
                                 <td className="px-4 py-2 text-stone-500 italic border border-stone-200">{expense.item_name}</td>
                                 <td className="px-4 py-2 text-stone-500 border border-stone-200">{expense.vat_number}</td>
-                                <td className="px-4 py-2 text-right font-bold text-rose-600 font-mono border border-stone-200 bg-stone-50">SR {(expense.total||0).toFixed(2)}</td>
-                                <td className="px-4 py-2 text-right font-mono border border-stone-200">SR {(expense.vat_debit||0).toFixed(2)}</td>
                                 <td className="px-4 py-2 text-right font-mono border border-stone-200">SR {(expense.total_debit||0).toFixed(2)}</td>
+                                <td className="px-4 py-2 text-right font-mono border border-stone-200">SR {(expense.vat_debit||0).toFixed(2)}</td>
+                                <td className="px-4 py-2 text-right font-bold text-rose-600 font-mono border border-stone-200 bg-stone-50">SR {(expense.total||0).toFixed(2)}</td>
                                 <td className="px-4 py-2 border border-stone-200"><span className="px-2 py-1 bg-stone-100 text-stone-600 rounded text-[10px] font-bold uppercase">{expense.paid_by}</span></td>
-                                <td className="px-4 py-2 text-center border border-stone-200"><div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"><button type="button" onClick={()=>{setEditingExpenseId(expense.id!); setEditingSupplierVat(expense.vat_number||'');}} className="p-1 text-stone-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"><Edit2 size={12}/></button>{userRole==='admin'&&<button type="button" onClick={()=>handleDeleteExpense(expense.id!)} className="p-1 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded"><Trash2 size={12}/></button>}</div></td>
+                                <td className="px-4 py-2 text-center border border-stone-200"><div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"><button type="button" onClick={()=>{setEditingExpenseId(expense.id!); setEditingSupplierVat(expense.vat_number||'');}} className="p-1 text-stone-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"><Edit2 size={12}/></button><button type="button" onClick={()=>handleDeleteExpense(expense.id!)} className="p-1 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded"><Trash2 size={12}/></button></div></td>
                               </tr>
                             );
                           })}
@@ -505,10 +555,10 @@ export default function App() {
                               <td className="px-1 py-1 border border-stone-200"><select name="supplier_id" onChange={e=>setAddingSupplierVat(suppliers.find(s=>s.id===e.target.value)?.vat_number||'')} className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"><option value="">Select Supplier</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></td>
                               <td className="px-1 py-1 border border-stone-200"><input name="item_name" type="text" placeholder="Item" required className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"/></td>
                               <td className="px-1 py-1 border border-stone-200"><input name="vat_number" type="text" placeholder="VAT #" value={addingSupplierVat} onChange={e=>setAddingSupplierVat(e.target.value)} className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"/></td>
-                              <td className="px-1 py-1 border border-stone-200"><input name="total" type="number" step="0.01" placeholder="Total" required className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md text-right font-bold"/></td>
+                              <td className="px-1 py-1 border border-stone-200"><input name="total_debit" type="number" step="0.01" placeholder="Net amount" required className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md text-right font-bold"/></td>
                               <td className="px-1 py-1 border border-stone-200 text-right text-[10px] text-stone-400">Auto</td>
                               <td className="px-1 py-1 border border-stone-200 text-right text-[10px] text-stone-400">Auto</td>
-                              <td className="px-1 py-1 border border-stone-200"><select name="paid_by" className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"><option>Cash</option><option>Card</option><option>Transfer</option><option>WISSAM</option></select></td>
+                              <td className="px-1 py-1 border border-stone-200"><select name="paid_by" className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"><option>Cash</option><option>Transfer</option></select></td>
                               <td className="px-1 py-1 border border-stone-200"><div className="flex gap-1 justify-center"><button type="submit" className="p-1.5 bg-rose-600 text-white hover:bg-rose-700 rounded-lg"><Plus size={14}/></button><button type="button" onClick={()=>setIsAddingExpense(false)} className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-lg"><X size={14}/></button></div></td>
                             </tr>
                           ):(
@@ -523,7 +573,7 @@ export default function App() {
                             <tr key={supplier.id} className="hover:bg-stone-50 transition-colors group text-[11px]">
                               <td className="px-4 py-2 border border-stone-200" colSpan={2}>{supplier.name}</td>
                               <td className="px-4 py-2 border border-stone-200" colSpan={2}>{supplier.vat_number}</td>
-                              <td className="px-4 py-2 text-center border border-stone-200" colSpan={2}>{userRole==='admin'&&<button type="button" onClick={()=>handleDeleteSupplier(supplier.id!)} className="p-1 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded opacity-0 group-hover:opacity-100"><Trash2 size={14}/></button>}</td>
+                              <td className="px-4 py-2 text-center border border-stone-200" colSpan={2}><button type="button" onClick={()=>handleDeleteSupplier(supplier.id!)} className="p-1 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded opacity-0 group-hover:opacity-100"><Trash2 size={14}/></button></td>
                             </tr>
                           ))}
                           <tr className="bg-stone-50/50">
@@ -540,9 +590,9 @@ export default function App() {
                           {activeTab==='sales'&&<SalesTotals/>}
                           {activeTab==='expenses'&&(<>
                             <td className="px-4 py-3 border border-stone-200" colSpan={3}/>
-                            <td className="px-4 py-3 text-right border border-stone-200 font-mono text-rose-600">SR {filteredExpenses.reduce((a,e)=>a+(e.total||0),0).toFixed(2)}</td>
-                            <td className="px-4 py-3 text-right border border-stone-200 font-mono">SR {filteredExpenses.reduce((a,e)=>a+(e.vat_debit||0),0).toFixed(2)}</td>
                             <td className="px-4 py-3 text-right border border-stone-200 font-mono">SR {filteredExpenses.reduce((a,e)=>a+(e.total_debit||0),0).toFixed(2)}</td>
+                            <td className="px-4 py-3 text-right border border-stone-200 font-mono">SR {filteredExpenses.reduce((a,e)=>a+(e.vat_debit||0),0).toFixed(2)}</td>
+                            <td className="px-4 py-3 text-right border border-stone-200 font-mono text-rose-600">SR {filteredExpenses.reduce((a,e)=>a+(e.total||0),0).toFixed(2)}</td>
                             <td className="px-4 py-3 border border-stone-200" colSpan={2}/>
                           </>)}
                           {activeTab==='suppliers'&&<td colSpan={4} className="px-4 py-3 border border-stone-200"/>}

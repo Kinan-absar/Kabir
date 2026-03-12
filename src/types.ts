@@ -49,6 +49,7 @@ export interface MonthlyAttachment {
   uploaded_at: string;
 }
 
-export type UserRole = 'admin' | 'employee';
+// UserRole is defined and exported from dataService.ts
+
 
 export const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
