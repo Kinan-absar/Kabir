@@ -40,8 +40,8 @@ const AuthScreen: React.FC = () => {
     <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4">
       {/* Soft background blobs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-48 -right-48 w-[500px] h-[500px] bg-emerald-900/4 rounded-full blur-3xl" />
-        <div className="absolute -bottom-48 -left-48 w-[500px] h-[500px] bg-emerald-900/4 rounded-full blur-3xl" />
+        <div className="absolute -top-48 -right-48 w-[500px] h-[500px] bg-brand/5 rounded-full blur-3xl" />
+        <div className="absolute -bottom-48 -left-48 w-[500px] h-[500px] bg-brand/5 rounded-full blur-3xl" />
       </div>
 
       <div className="relative max-w-md w-full">
@@ -80,7 +80,7 @@ const AuthScreen: React.FC = () => {
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder="name@example.com"
-                  className="w-full pl-11 pr-4 py-4 bg-stone-50 border border-stone-100 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all text-sm font-medium text-stone-900 placeholder:text-stone-300"
+                  className="w-full pl-11 pr-4 py-4 bg-stone-50 border border-stone-100 rounded-2xl outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand-light transition-all text-sm font-medium text-stone-900 placeholder:text-stone-300"
                 />
               </div>
             </div>
@@ -98,7 +98,7 @@ const AuthScreen: React.FC = () => {
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full pl-11 pr-4 py-4 bg-stone-50 border border-stone-100 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all text-sm font-medium text-stone-900 placeholder:text-stone-300"
+                  className="w-full pl-11 pr-4 py-4 bg-stone-50 border border-stone-100 rounded-2xl outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand-light transition-all text-sm font-medium text-stone-900 placeholder:text-stone-300"
                 />
               </div>
             </div>
@@ -115,7 +115,7 @@ const AuthScreen: React.FC = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-emerald-900 hover:bg-emerald-800 text-white font-black py-4 rounded-2xl shadow-xl shadow-emerald-900/20 flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-60 mt-2"
+              className="w-full bg-brand hover:bg-brand-light text-white font-black py-4 rounded-2xl shadow-xl shadow-brand/20 flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-60 mt-2"
             >
               {loading ? (
                 <Loader2 className="w-5 h-5 animate-spin" />

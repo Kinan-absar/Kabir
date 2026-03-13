@@ -11,7 +11,7 @@ import {
   where,
   limit,
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import {Sale, Expense, Supplier} from './types';
 
 enum OperationType {

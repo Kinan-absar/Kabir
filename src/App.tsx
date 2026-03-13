@@ -6,7 +6,7 @@ import { db } from './firebase';
 import { 
   Plus, Trash2, LayoutDashboard, Receipt, TrendingUp,
   Calendar, DollarSign, Users, FileText, Search,
-  Edit2, Save, X, Shield, LogOut,
+  Edit2, Save, X, Shield, LogOut, Download
 } from 'lucide-react';
 import { Sale, Expense, Supplier, DAYS } from './types';
 import {
@@ -16,6 +16,7 @@ import {
   getMonthlyCash, saveMonthlyCashData,
   getUserRole, UserRole,
 } from './dataService';
+import { exportSalesToExcel, exportExpensesToExcel } from './exportUtils';
 import AuthScreen from './AuthScreen';
 import Logo from './logo';
 
@@ -369,6 +370,22 @@ export default function App() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18}/>
               <input type="text" placeholder="Search records..." className="pl-10 pr-4 py-2 bg-white border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-500/20 w-64 shadow-sm" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)}/>
             </div>
+            {(activeTab === 'sales' || activeTab === 'expenses') && (
+              <button
+                onClick={() => {
+                  if (activeTab === 'sales') {
+                    exportSalesToExcel(filteredSales, `Sales_${selectedYear}_${selectedPeriod}.xlsx`);
+                  } else {
+                    exportExpensesToExcel(filteredExpenses, `Expenses_${selectedYear}_${selectedPeriod}.xlsx`);
+                  }
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-stone-200 rounded-xl text-sm font-semibold text-stone-700 hover:bg-stone-50 shadow-sm transition-all"
+                title="Export to Excel"
+              >
+                <Download size={18} className="text-emerald-600" />
+                <span className="hidden sm:inline">Export</span>
+              </button>
+            )}
           </div>
         </header>
 
