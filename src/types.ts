@@ -41,14 +41,6 @@ export interface Supplier {
   vat_number?: string;
 }
 
-export interface MonthlyAttachment {
-  id?: string;
-  month_year: string;
-  file_url: string;
-  file_name: string;
-  uploaded_at: string;
-}
-
 // UserRole is defined and exported from dataService.ts
 
 

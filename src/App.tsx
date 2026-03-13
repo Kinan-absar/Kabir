@@ -1,21 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { auth } from './firebase';
+import { doc, getDocFromCache, getDocFromServer } from 'firebase/firestore';
+import { db } from './firebase';
 import { 
   Plus, Trash2, LayoutDashboard, Receipt, TrendingUp,
   Calendar, DollarSign, Users, FileText, Search,
-  Edit2, Save, X, Shield, Upload, ExternalLink, LogOut,
+  Edit2, Save, X, Shield, LogOut,
 } from 'lucide-react';
-import { Sale, Expense, Supplier, MonthlyAttachment, DAYS } from './types';
+import { Sale, Expense, Supplier, DAYS } from './types';
 import {
   getSales, saveSale, deleteSale as deleteSaleDb,
   getExpenses, saveExpense, deleteExpense as deleteExpenseDb,
   getSuppliers, saveSupplier, deleteSupplier as deleteSupplierDb,
-  getAttachments, saveAttachment, deleteAttachment as deleteAttachmentDb,
   getMonthlyCash, saveMonthlyCashData,
   getUserRole, UserRole,
 } from './dataService';
 import AuthScreen from './AuthScreen';
+import Logo from './logo';
 
 export default function App() {
   // ── Auth state ────────────────────────────────────────────────────────────
@@ -28,7 +30,6 @@ export default function App() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [attachments, setAttachments] = useState<MonthlyAttachment[]>([]);
   const [isAddingSale, setIsAddingSale] = useState(false);
   const [isAddingExpense, setIsAddingExpense] = useState(false);
   const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
@@ -45,6 +46,19 @@ export default function App() {
 
   // Listen to Firebase Auth state
   useEffect(() => {
+    // Test connection to Firestore
+    const testConnection = async () => {
+      try {
+        await getDocFromServer(doc(db, 'test', 'connection'));
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('the client is offline')) {
+          console.error("Please check your Firebase configuration.");
+          setError("Firebase is offline. Please check your connection or configuration.");
+        }
+      }
+    };
+    testConnection();
+
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
@@ -68,14 +82,12 @@ export default function App() {
   useEffect(() => {
     if (selectedPeriod !== 'all' && !selectedPeriod.startsWith('Q')) {
       fetchMonthlyCash(`${selectedYear}-${selectedPeriod}`);
-      fetchAttachments(`${selectedYear}-${selectedPeriod}`);
     }
   }, [selectedYear, selectedPeriod]);
 
   const fetchSales = async () => { try { setSales(await getSales()); } catch (e: any) { setError('Failed to load sales: ' + e.message); } };
   const fetchExpenses = async () => { try { setExpenses(await getExpenses()); } catch (e: any) { setError('Failed to load expenses: ' + e.message); } };
   const fetchSuppliers = async () => { try { setSuppliers(await getSuppliers()); } catch (e: any) { setError('Failed to load suppliers: ' + e.message); } };
-  const fetchAttachments = async (my: string) => { try { setAttachments(await getAttachments(my)); } catch (e) { console.error(e); } };
   const fetchMonthlyCash = async (my: string) => {
     try {
       const data = await getMonthlyCash(my);
@@ -155,19 +167,9 @@ export default function App() {
     catch (e: any) { setError('Failed to save supplier: ' + e.message); }
   };
 
-  const handleUploadAttachment = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = e.currentTarget; const fd = new FormData(form);
-    try {
-      await saveAttachment({ month_year: `${selectedYear}-${selectedPeriod}`, file_url: fd.get('file_url') as string, file_name: fd.get('file_name') as string });
-      await fetchAttachments(`${selectedYear}-${selectedPeriod}`); form.reset();
-    } catch (e: any) { setError('Failed to upload: ' + e.message); }
-  };
-
   const handleDeleteSale = async (id: string) => { if (!confirm('Are you sure?')) return; try { await deleteSaleDb(id); await fetchSales(); } catch (e: any) { setError(e.message); } };
   const handleDeleteExpense = async (id: string) => { if (!confirm('Are you sure?')) return; try { await deleteExpenseDb(id); await fetchExpenses(); } catch (e: any) { setError(e.message); } };
   const handleDeleteSupplier = async (id: string) => { if (!confirm('Are you sure?')) return; try { await deleteSupplierDb(id); await fetchSuppliers(); } catch (e: any) { setError(e.message); } };
-  const handleDeleteAttachment = async (id: string) => { if (!confirm('Are you sure?')) return; try { await deleteAttachmentDb(id); await fetchAttachments(`${selectedYear}-${selectedPeriod}`); } catch (e: any) { setError(e.message); } };
 
   const calcCredit = (s: Sale) => (s.dining_card||0)+(s.jahez_bistro||0)+(s.jahez_burger||0)+(s.keeta_bistro||0)+(s.keeta_burger||0)+(s.hunger_station_bistro||0)+(s.hunger_station_burger||0)+(s.ninja||0);
   const calcTotal = (s: Sale) => (s.total_cash_sales||0) + calcCredit(s);
@@ -310,9 +312,12 @@ export default function App() {
       )}
 
       <nav className="fixed top-0 left-0 h-full w-64 bg-white border-r border-stone-200 p-6 z-10 hidden lg:block shadow-sm">
-        <div className="flex items-center gap-3 mb-12 px-2">
-          <div className="w-10 h-10 bg-emerald-900 rounded-xl flex items-center justify-center text-white shadow-lg"><LayoutDashboard size={24} /></div>
-          <h1 className="text-xl font-bold tracking-tight">Al Kabir</h1>
+        <div className="flex items-center gap-2 mb-12 px-2">
+          <Logo size={56} />
+          <div>
+            <h1 className="text-lg font-black tracking-tight leading-tight">Al Kabir</h1>
+            <p className="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">Bistro</p>
+          </div>
         </div>
         <div className="space-y-2">
           {[{id:'sales',label:'Daily Sales',icon:<LayoutDashboard size={20}/>},{id:'expenses',label:'Expenses',icon:<Receipt size={20}/>},{id:'suppliers',label:'Suppliers',icon:<Users size={20}/>}].map(tab=>(
@@ -375,45 +380,6 @@ export default function App() {
                 <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm"><div className="p-2 bg-rose-50 text-rose-600 rounded-lg w-fit mb-4"><Receipt size={20}/></div><p className="text-stone-500 text-sm font-medium">Total Expenses</p><p className="text-2xl font-bold mt-1">SR {totalExpensesSum.toLocaleString()}</p></div>
                 <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm"><div className="p-2 bg-blue-50 text-blue-600 rounded-lg w-fit mb-4"><DollarSign size={20}/></div><p className="text-stone-500 text-sm font-medium">Cash Balance</p><p className="text-2xl font-bold mt-1">SR {(monthlyOpeningCash+totalCashSalesSum-totalCashExpensesSum).toLocaleString()}</p></div>
               </div>
-
-              {selectedPeriod!=='all'&&!selectedPeriod.startsWith('Q')&&(
-                <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm mb-8">
-                  <h3 className="text-lg font-bold flex items-center gap-2 mb-4"><Upload size={20} className="text-stone-600"/>Monthly Document Attachment</h3>
-                  {attachments.length>0?(
-                    <div className="space-y-4">{attachments.map(att=>(
-                      <div key={att.id} className="flex items-center justify-between p-4 bg-stone-50 rounded-xl border border-stone-100">
-                        <div className="flex items-center gap-3"><FileText size={24} className="text-stone-400"/><div><p className="font-bold text-sm">{att.file_name}</p><p className="text-[10px] text-stone-400 uppercase font-bold">Uploaded on {new Date(att.uploaded_at).toLocaleDateString()}</p></div></div>
-                        <div className="flex items-center gap-2">
-                          <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="p-2 text-stone-600 hover:bg-stone-200 rounded-lg"><ExternalLink size={18}/></a>
-                          <button onClick={()=>handleDeleteAttachment(att.id!)} className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg"><Trash2 size={18}/></button>
-                        </div>
-                      </div>
-                    ))}</div>
-                  ):(
-                    <form onSubmit={handleUploadAttachment} className="flex items-center gap-4">
-                      <input name="file_name" type="text" placeholder="File Name" required className="flex-1 px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none"/>
-                      <input name="file_url" type="url" placeholder="PDF URL" required className="flex-1 px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none"/>
-                      <button type="submit" className="px-6 py-2 bg-emerald-900 text-white rounded-xl font-bold text-sm hover:bg-emerald-800 flex items-center gap-2"><Upload size={16}/>Attach PDF</button>
-                    </form>
-                  )}
-                </div>
-              )}
-
-              {activeTab==='expenses'&&selectedPeriod!=='all'&&!selectedPeriod.startsWith('Q')&&(
-                <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm mb-8">
-                  <h3 className="text-lg font-bold flex items-center gap-2 mb-6"><DollarSign size={20} className="text-emerald-600"/>Cash Reconciliation</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-                    <div className="space-y-1"><p className="text-xs font-medium text-stone-500 uppercase tracking-wider">Monthly Opening Cash</p><input type="number" value={monthlyOpeningCash} onChange={e=>{const v=Number(e.target.value);setMonthlyOpeningCash(v);handleSaveMonthlyCash(v,monthlyClosingCash);}} className="text-xl font-bold w-full bg-transparent border-b-2 border-stone-100 focus:border-emerald-500 focus:outline-none"/></div>
-                    <div className="space-y-1"><p className="text-xs font-medium text-stone-500 uppercase tracking-wider">Total Cash In (Sales)</p><p className="text-xl font-bold text-emerald-600">SR {totalCashSalesSum.toLocaleString()}</p></div>
-                    <div className="space-y-1"><p className="text-xs font-medium text-stone-500 uppercase tracking-wider">Total Cash Out (Expenses)</p><p className="text-xl font-bold text-rose-600">SR {totalCashExpensesSum.toLocaleString()}</p></div>
-                    <div className="space-y-1"><p className="text-xs font-medium text-stone-500 uppercase tracking-wider">Monthly Closing Cash</p><input type="number" value={monthlyClosingCash} onChange={e=>{const v=Number(e.target.value);setMonthlyClosingCash(v);handleSaveMonthlyCash(monthlyOpeningCash,v);}} className="text-xl font-bold w-full bg-transparent border-b-2 border-stone-100 focus:border-emerald-500 focus:outline-none"/></div>
-                  </div>
-                  <div className="mt-6 pt-6 border-t border-stone-100 flex items-center justify-between">
-                    <p className="text-sm font-medium text-stone-500">Expected Balance: <span className="text-stone-900 font-bold">SR {(monthlyOpeningCash+totalCashSalesSum-totalCashExpensesSum).toLocaleString()}</span></p>
-                    <p className="text-sm font-medium text-stone-500">Difference: <span className={`font-bold ${((monthlyOpeningCash+totalCashSalesSum-totalCashExpensesSum)-monthlyClosingCash)===0?'text-emerald-600':'text-rose-600'}`}>SR {((monthlyOpeningCash+totalCashSalesSum-totalCashExpensesSum)-monthlyClosingCash).toLocaleString()}</span></p>
-                  </div>
-                </div>
-              )}
 
               <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">

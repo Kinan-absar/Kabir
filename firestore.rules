@@ -10,7 +10,7 @@ service cloud.firestore {
     match /suppliers/{document=**} {
       allow read, write: if true;
     }
-    match /attachments/{document=**} {
+    match /users/{document=**} {
       allow read, write: if true;
     }
     match /monthly_cash/{document=**} {

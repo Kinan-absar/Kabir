@@ -12,7 +12,58 @@ import {
   limit,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Sale, Expense, Supplier, MonthlyAttachment } from './types';
+import {Sale, Expense, Supplier} from './types';
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 // ── User Role ──────────────────────────────────────────────────────────────
 // Reads /users/{uid} document with field: role = 'admin' | 'employee'
@@ -28,7 +79,7 @@ export const getUserRole = async (uid: string): Promise<UserRole> => {
       if (role === 'admin' || role === 'employee') return role;
     }
   } catch (e) {
-    console.warn('Could not fetch user role, defaulting to employee:', e);
+    handleFirestoreError(e, OperationType.GET, `users/${uid}`);
   }
   return 'employee'; // safest default
 };
@@ -36,99 +87,121 @@ export const getUserRole = async (uid: string): Promise<UserRole> => {
 // ── Sales ──────────────────────────────────────────────────────────────────
 
 export const getSales = async (): Promise<Sale[]> => {
-  const snap = await getDocs(collection(db, 'sales'));
-  return snap.docs
-    .map(d => ({ id: d.id, ...d.data() } as Sale))
-    .sort((a, b) => b.date.localeCompare(a.date));
+  try {
+    const snap = await getDocs(collection(db, 'sales'));
+    return snap.docs
+      .map(d => ({ id: d.id, ...d.data() } as Sale))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  } catch (e) {
+    handleFirestoreError(e, OperationType.LIST, 'sales');
+    return [];
+  }
 };
 
 export const saveSale = async (sale: Sale): Promise<Sale> => {
   const { id, ...data } = sale;
-  if (id) {
-    await setDoc(doc(db, 'sales', id), data, { merge: true });
-    return { id, ...data };
+  try {
+    if (id) {
+      await setDoc(doc(db, 'sales', id), data, { merge: true });
+      return { id, ...data };
+    }
+    // Check if date already exists → upsert
+    const existing = await getDocs(
+      query(collection(db, 'sales'), where('date', '==', sale.date), limit(1))
+    );
+    if (!existing.empty) {
+      const docId = existing.docs[0].id;
+      await updateDoc(doc(db, 'sales', docId), data as any);
+      return { id: docId, ...data };
+    }
+    const ref = await addDoc(collection(db, 'sales'), data);
+    return { id: ref.id, ...data };
+  } catch (e) {
+    handleFirestoreError(e, id ? OperationType.UPDATE : OperationType.CREATE, 'sales');
+    throw e;
   }
-  // Check if date already exists → upsert
-  const existing = await getDocs(
-    query(collection(db, 'sales'), where('date', '==', sale.date), limit(1))
-  );
-  if (!existing.empty) {
-    const docId = existing.docs[0].id;
-    await updateDoc(doc(db, 'sales', docId), data as any);
-    return { id: docId, ...data };
-  }
-  const ref = await addDoc(collection(db, 'sales'), data);
-  return { id: ref.id, ...data };
 };
 
 export const deleteSale = async (id: string): Promise<void> => {
-  await deleteDoc(doc(db, 'sales', id));
+  try {
+    await deleteDoc(doc(db, 'sales', id));
+  } catch (e) {
+    handleFirestoreError(e, OperationType.DELETE, `sales/${id}`);
+  }
 };
 
 // ── Expenses ───────────────────────────────────────────────────────────────
 
 export const getExpenses = async (): Promise<Expense[]> => {
-  const snap = await getDocs(collection(db, 'expenses'));
-  return snap.docs
-    .map(d => ({ id: d.id, ...d.data() } as Expense))
-    .sort((a, b) => b.date.localeCompare(a.date));
+  try {
+    const snap = await getDocs(collection(db, 'expenses'));
+    return snap.docs
+      .map(d => ({ id: d.id, ...d.data() } as Expense))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  } catch (e) {
+    handleFirestoreError(e, OperationType.LIST, 'expenses');
+    return [];
+  }
 };
 
 export const saveExpense = async (expense: Expense): Promise<Expense> => {
   const { id, ...data } = expense;
-  if (id) {
-    await setDoc(doc(db, 'expenses', id), data, { merge: true });
-    return { id, ...data };
+  try {
+    if (id) {
+      await setDoc(doc(db, 'expenses', id), data, { merge: true });
+      return { id, ...data };
+    }
+    const ref = await addDoc(collection(db, 'expenses'), data);
+    return { id: ref.id, ...data };
+  } catch (e) {
+    handleFirestoreError(e, id ? OperationType.UPDATE : OperationType.CREATE, 'expenses');
+    throw e;
   }
-  const ref = await addDoc(collection(db, 'expenses'), data);
-  return { id: ref.id, ...data };
 };
 
 export const deleteExpense = async (id: string): Promise<void> => {
-  await deleteDoc(doc(db, 'expenses', id));
+  try {
+    await deleteDoc(doc(db, 'expenses', id));
+  } catch (e) {
+    handleFirestoreError(e, OperationType.DELETE, `expenses/${id}`);
+  }
 };
 
 // ── Suppliers ──────────────────────────────────────────────────────────────
 
 export const getSuppliers = async (): Promise<Supplier[]> => {
-  const snap = await getDocs(collection(db, 'suppliers'));
-  return snap.docs
-    .map(d => ({ id: d.id, ...d.data() } as Supplier))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  try {
+    const snap = await getDocs(collection(db, 'suppliers'));
+    return snap.docs
+      .map(d => ({ id: d.id, ...d.data() } as Supplier))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch (e) {
+    handleFirestoreError(e, OperationType.LIST, 'suppliers');
+    return [];
+  }
 };
 
 export const saveSupplier = async (supplier: Supplier): Promise<Supplier> => {
   const { id, ...data } = supplier;
-  if (id) {
-    await setDoc(doc(db, 'suppliers', id), data, { merge: true });
-    return { id, ...data };
+  try {
+    if (id) {
+      await setDoc(doc(db, 'suppliers', id), data, { merge: true });
+      return { id, ...data };
+    }
+    const ref = await addDoc(collection(db, 'suppliers'), data);
+    return { id: ref.id, ...data };
+  } catch (e) {
+    handleFirestoreError(e, id ? OperationType.UPDATE : OperationType.CREATE, 'suppliers');
+    throw e;
   }
-  const ref = await addDoc(collection(db, 'suppliers'), data);
-  return { id: ref.id, ...data };
 };
 
 export const deleteSupplier = async (id: string): Promise<void> => {
-  await deleteDoc(doc(db, 'suppliers', id));
-};
-
-// ── Attachments ────────────────────────────────────────────────────────────
-
-export const getAttachments = async (monthYear: string): Promise<MonthlyAttachment[]> => {
-  const q = query(collection(db, 'attachments'), where('month_year', '==', monthYear));
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() } as MonthlyAttachment));
-};
-
-export const saveAttachment = async (
-  attachment: Omit<MonthlyAttachment, 'id' | 'uploaded_at'>
-): Promise<MonthlyAttachment> => {
-  const data = { ...attachment, uploaded_at: new Date().toISOString() };
-  const ref = await addDoc(collection(db, 'attachments'), data);
-  return { id: ref.id, ...data };
-};
-
-export const deleteAttachment = async (id: string): Promise<void> => {
-  await deleteDoc(doc(db, 'attachments', id));
+  try {
+    await deleteDoc(doc(db, 'suppliers', id));
+  } catch (e) {
+    handleFirestoreError(e, OperationType.DELETE, `suppliers/${id}`);
+  }
 };
 
 // ── Monthly Cash ───────────────────────────────────────────────────────────
@@ -141,10 +214,15 @@ export interface MonthlyCash {
 }
 
 export const getMonthlyCash = async (monthYear: string): Promise<MonthlyCash> => {
-  const q = query(collection(db, 'monthly_cash'), where('month_year', '==', monthYear), limit(1));
-  const snap = await getDocs(q);
-  if (snap.empty) return { month_year: monthYear, opening_cash: 0, closing_cash: 0 };
-  return { id: snap.docs[0].id, ...snap.docs[0].data() } as MonthlyCash;
+  try {
+    const q = query(collection(db, 'monthly_cash'), where('month_year', '==', monthYear), limit(1));
+    const snap = await getDocs(q);
+    if (snap.empty) return { month_year: monthYear, opening_cash: 0, closing_cash: 0 };
+    return { id: snap.docs[0].id, ...snap.docs[0].data() } as MonthlyCash;
+  } catch (e) {
+    handleFirestoreError(e, OperationType.GET, 'monthly_cash');
+    return { month_year: monthYear, opening_cash: 0, closing_cash: 0 };
+  }
 };
 
 export const saveMonthlyCashData = async (
@@ -152,11 +230,15 @@ export const saveMonthlyCashData = async (
   opening_cash: number,
   closing_cash: number
 ): Promise<void> => {
-  const q = query(collection(db, 'monthly_cash'), where('month_year', '==', monthYear), limit(1));
-  const snap = await getDocs(q);
-  if (!snap.empty) {
-    await updateDoc(doc(db, 'monthly_cash', snap.docs[0].id), { opening_cash, closing_cash });
-  } else {
-    await addDoc(collection(db, 'monthly_cash'), { month_year: monthYear, opening_cash, closing_cash });
+  try {
+    const q = query(collection(db, 'monthly_cash'), where('month_year', '==', monthYear), limit(1));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      await updateDoc(doc(db, 'monthly_cash', snap.docs[0].id), { opening_cash, closing_cash });
+    } else {
+      await addDoc(collection(db, 'monthly_cash'), { month_year: monthYear, opening_cash, closing_cash });
+    }
+  } catch (e) {
+    handleFirestoreError(e, OperationType.WRITE, 'monthly_cash');
   }
 };

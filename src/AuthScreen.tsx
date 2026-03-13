@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from './firebase';
-import { UtensilsCrossed, Mail, Lock, ArrowRight, Loader2, LogIn } from 'lucide-react';
+import { Mail, Lock, ArrowRight, Loader2, LogIn } from 'lucide-react';
+import Logo from './logo';
 
 const AuthScreen: React.FC = () => {
   const [email, setEmail]       = useState('');
@@ -47,12 +48,10 @@ const AuthScreen: React.FC = () => {
 
         {/* Logo + title */}
         <div className="text-center mb-10">
-          <div className="w-16 h-16 bg-emerald-900 rounded-[1.75rem] flex items-center justify-center text-white shadow-2xl shadow-emerald-900/25 mx-auto mb-6">
-            <UtensilsCrossed className="w-8 h-8" />
-          </div>
+          <Logo size={80} className="mx-auto mb-6" />
           <h1 className="text-3xl font-black tracking-tight text-stone-900">Al Kabir</h1>
           <p className="text-stone-400 mt-2 text-sm font-semibold tracking-wide uppercase">
-            Lebanese Bistro &nbsp;·&nbsp; Manager Portal
+            Bistro &nbsp;·&nbsp; Manager Portal
           </p>
         </div>
 
