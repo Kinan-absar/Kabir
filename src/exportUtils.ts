@@ -38,6 +38,8 @@ export const exportExpensesToExcel = (expenses: Expense[], fileName: string = 'E
     'VAT (15%)': expense.vat_debit,
     'Total (inc. VAT)': expense.total,
     'Paid By': expense.paid_by,
+    'Category': expense.category || '',
+    'Sub-Category': expense.sub_category || '',
   }));
 
   const worksheet = XLSX.utils.json_to_sheet(worksheetData);

@@ -9,6 +9,11 @@ import {
   Edit2, Save, X, Shield, LogOut, Download
 } from 'lucide-react';
 import { Sale, Expense, Supplier, DAYS } from './types';
+import { EXPENSE_CATEGORIES } from './constants';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell
+} from 'recharts';
 import {
   getSales, saveSale, deleteSale as deleteSaleDb,
   getExpenses, saveExpense, deleteExpense as deleteExpenseDb,
@@ -37,6 +42,8 @@ export default function App() {
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [editingSupplierVat, setEditingSupplierVat] = useState<string>('');
   const [addingSupplierVat, setAddingSupplierVat] = useState<string>('');
+  const [addingCategory, setAddingCategory] = useState<string>('');
+  const [editingCategory, setEditingCategory] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedPeriod, setSelectedPeriod] = useState<string>((new Date().getMonth() + 1).toString().padStart(2, '0'));
@@ -45,6 +52,8 @@ export default function App() {
   const [expenseFilterSupplier, setExpenseFilterSupplier] = useState('');
   const [expenseFilterItem, setExpenseFilterItem] = useState('');
   const [expenseFilterPaidBy, setExpenseFilterPaidBy] = useState('');
+  const [expenseFilterCategory, setExpenseFilterCategory] = useState('');
+  const [expenseFilterSubCategory, setExpenseFilterSubCategory] = useState('');
   const [salesFilterCategory, setSalesFilterCategory] = useState('');
 
   const [monthlyOpeningCash, setMonthlyOpeningCash] = useState(0);
@@ -160,6 +169,8 @@ export default function App() {
       credit: Number(fd.get('credit') || 0),
       total_w_vat_credit: Number(fd.get('total_w_vat_credit') || 0),
       paid_by: fd.get('paid_by') as string,
+      category: fd.get('category') as string,
+      sub_category: fd.get('sub_category') as string,
     };
     const id = (fd.get('id') as string) || editingExpenseId || undefined;
     try { await saveExpense(id ? { ...expense, id } : expense); setEditingExpenseId(null); setIsAddingExpense(false); setAddingSupplierVat(''); await fetchExpenses(); }
@@ -212,8 +223,10 @@ export default function App() {
     const matchesSupplier = !expenseFilterSupplier || e.supplier_name === expenseFilterSupplier;
     const matchesItem = !expenseFilterItem || e.item_name === expenseFilterItem;
     const matchesPaidBy = !expenseFilterPaidBy || e.paid_by === expenseFilterPaidBy;
+    const matchesCategory = !expenseFilterCategory || e.category === expenseFilterCategory;
+    const matchesSubCategory = !expenseFilterSubCategory || e.sub_category === expenseFilterSubCategory;
     
-    return matchesTime && matchesSearch && matchesSupplier && matchesItem && matchesPaidBy;
+    return matchesTime && matchesSearch && matchesSupplier && matchesItem && matchesPaidBy && matchesCategory && matchesSubCategory;
   });
 
   const totalSalesSum = filteredSales.reduce((a, s) => a + calcTotal(s), 0);
@@ -239,8 +252,33 @@ export default function App() {
       const ws = filteredSales.filter(s => { const d=new Date(s.date).getDate(); return d>=w.start&&d<=w.end; });
       return { ...w, total: ws.reduce((a,s)=>a+calcTotal(s),0), customers: ws.reduce((a,s)=>a+(s.num_customers||0),0) };
     });
+
+    // ── Expense Analysis Data ──
+    const supplierSpend = filteredExpenses.reduce((acc: Record<string, number>, curr) => {
+      const name = curr.supplier_name || 'Unknown';
+      acc[name] = (acc[name] || 0) + (curr.total || 0);
+      return acc;
+    }, {});
+
+    const topSuppliersData = Object.entries(supplierSpend)
+      .map(([name, value]): { name: string; value: number } => ({ name, value: value as number }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+
+    const categorySpend = filteredExpenses.reduce((acc: Record<string, number>, curr) => {
+      const cat = curr.category || 'Uncategorized';
+      acc[cat] = (acc[cat] || 0) + (curr.total || 0);
+      return acc;
+    }, {});
+
+    const categoryData = Object.entries(categorySpend)
+      .map(([name, value]): { name: string; value: number } => ({ name, value: value as number }))
+      .sort((a, b) => b.value - a.value);
+
+    const COLORS = ['#064e3b', '#065f46', '#047857', '#059669', '#10b981', '#34d399', '#6ee7b7'];
+
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 pb-12">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 bg-emerald-900 rounded-3xl p-8 text-white relative overflow-hidden shadow-2xl">
             <div className="relative z-10">
@@ -258,6 +296,82 @@ export default function App() {
             <div className="space-y-4"><div className="flex items-center justify-between text-xs"><span className="text-stone-500">Cost Ratio</span><span className="font-bold text-rose-500">{costRatio.toFixed(1)}%</span></div><div className="w-full h-1.5 bg-stone-100 rounded-full overflow-hidden"><div className="h-full bg-rose-500 rounded-full" style={{width:`${costRatio}%`}} /></div></div>
           </div>
         </div>
+
+        {/* Expense Analysis Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white rounded-3xl p-8 border border-stone-200 shadow-sm">
+            <h4 className="text-sm font-bold text-stone-900 mb-8 flex items-center gap-2">
+              <Users size={18} className="text-stone-400" />
+              Top Suppliers by Spend
+            </h4>
+            <div className="h-[280px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={topSuppliersData} layout="vertical" margin={{ left: 20, right: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f5f5f4" />
+                  <XAxis type="number" hide />
+                  <YAxis 
+                    dataKey="name" 
+                    type="category" 
+                    width={100} 
+                    tick={{ fontSize: 10, fill: '#78716c' }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip 
+                    cursor={{ fill: '#f5f5f4' }}
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '12px' }}
+                    formatter={(value: number) => [`SR ${value.toLocaleString()}`, 'Spend']}
+                  />
+                  <Bar dataKey="value" fill="#064e3b" radius={[0, 4, 4, 0]} barSize={24} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-3xl p-8 border border-stone-200 shadow-sm">
+            <h4 className="text-sm font-bold text-stone-900 mb-8 flex items-center gap-2">
+              <Receipt size={18} className="text-stone-400" />
+              Expenses by Category
+            </h4>
+            <div className="h-[280px] w-full flex flex-col md:flex-row items-center">
+              <div className="h-full w-full md:w-1/2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={categoryData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={70}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {categoryData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '12px' }}
+                      formatter={(value: number) => [`SR ${value.toLocaleString()}`, 'Spend']}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="w-full md:w-1/2 space-y-2 mt-4 md:mt-0 max-h-[200px] overflow-y-auto pr-2">
+                {categoryData.map((item, index) => (
+                  <div key={item.name} className="flex items-center justify-between text-[10px]">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                      <span className="text-stone-600 font-medium truncate max-w-[80px]">{item.name}</span>
+                    </div>
+                    <span className="text-stone-400 font-mono">SR {item.value.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="bg-white rounded-3xl p-8 border border-stone-200 shadow-sm">
             <h4 className="text-sm font-bold text-stone-900 mb-8 flex items-center gap-2"><div className="w-1.5 h-1.5 bg-emerald-600 rounded-full" />Channel Performance</h4>
@@ -474,16 +588,43 @@ export default function App() {
                     <option value="Cash">Cash</option>
                     <option value="Transfer">Transfer</option>
                   </select>
+                  <select 
+                    value={expenseFilterCategory} 
+                    onChange={e => {
+                      setExpenseFilterCategory(e.target.value);
+                      setExpenseFilterSubCategory('');
+                    }}
+                    className="text-xs font-semibold bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5 focus:ring-0 cursor-pointer"
+                  >
+                    <option value="">All Categories</option>
+                    {Object.keys(EXPENSE_CATEGORIES).map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                  {expenseFilterCategory && (
+                    <select 
+                      value={expenseFilterSubCategory} 
+                      onChange={e => setExpenseFilterSubCategory(e.target.value)}
+                      className="text-xs font-semibold bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5 focus:ring-0 cursor-pointer"
+                    >
+                      <option value="">All Sub-Categories</option>
+                      {EXPENSE_CATEGORIES[expenseFilterCategory].map(sc => (
+                        <option key={sc} value={sc}>{sc}</option>
+                      ))}
+                    </select>
+                  )}
                 </>
               )}
 
-              {(salesFilterCategory || expenseFilterSupplier || expenseFilterItem || expenseFilterPaidBy || searchTerm) && (
+              {(salesFilterCategory || expenseFilterSupplier || expenseFilterItem || expenseFilterPaidBy || expenseFilterCategory || expenseFilterSubCategory || searchTerm) && (
                 <button 
                   onClick={() => {
                     setSalesFilterCategory('');
                     setExpenseFilterSupplier('');
                     setExpenseFilterItem('');
                     setExpenseFilterPaidBy('');
+                    setExpenseFilterCategory('');
+                    setExpenseFilterSubCategory('');
                     setSearchTerm('');
                   }}
                   className="text-[10px] font-bold text-rose-500 hover:text-rose-700 uppercase tracking-widest flex items-center gap-1 px-2 py-1 rounded-md hover:bg-rose-50 transition-colors"
@@ -510,7 +651,7 @@ export default function App() {
                     <table className="w-full text-left border-collapse border border-stone-200">
                       <thead className="sticky top-0 z-10 bg-stone-50 shadow-sm">
                         {activeTab==='sales'?(<tr className="border-b border-stone-200">{['Date','Day','Dining(Cash)','Dining(Card)','Jahez Bis','Jahez Bur','Keeta Bis','Keeta Bur','Hunger Bis','Hunger Bur','Ninja','Credit','Total Sales','Net','VAT','Disc','Cust','Avg','POS','Diff','Actions'].map(h=><th key={h} className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">{h}</th>)}</tr>)
-                        :activeTab==='expenses'?(<tr className="border-b border-stone-200">{['Date','Invoice #','Supplier','Item','VAT Number','Net (ex. VAT)','VAT (15%)','Total (inc. VAT)','Paid By','Actions'].map(h=><th key={h} className="px-3 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider border border-stone-200">{h}</th>)}</tr>)
+                        :activeTab==='expenses'?(<tr className="border-b border-stone-200">{['Date','Invoice #','Supplier','Item','Category','Sub-Category','VAT Number','Net (ex. VAT)','VAT (15%)','Total (inc. VAT)','Paid By','Actions'].map(h=><th key={h} className="px-3 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider border border-stone-200">{h}</th>)}</tr>)
                         :(<tr className="border-b border-stone-200"><th className="px-3 py-3 text-xs font-bold text-stone-500 uppercase border border-stone-200" colSpan={2}>Supplier Name</th><th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase border border-stone-200" colSpan={2}>VAT Number</th><th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase text-center border border-stone-200" colSpan={2}>Actions</th></tr>)}
                       </thead>
                       <tbody className="divide-y divide-stone-100">
@@ -595,6 +736,18 @@ export default function App() {
                                   </select>
                                 </td>
                                 <td className="px-1 py-1 border border-stone-200"><input id="edit-item" name="item_name" type="text" defaultValue={expense.item_name} required className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"/></td>
+                                <td className="px-1 py-1 border border-stone-200">
+                                  <select id="edit-category" name="category" defaultValue={expense.category} onChange={e => setEditingCategory(e.target.value)} className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md">
+                                    <option value="">Select</option>
+                                    {Object.keys(EXPENSE_CATEGORIES).map(c => <option key={c} value={c}>{c}</option>)}
+                                  </select>
+                                </td>
+                                <td className="px-1 py-1 border border-stone-200">
+                                  <select id="edit-sub-category" name="sub_category" defaultValue={expense.sub_category} className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md">
+                                    <option value="">Select</option>
+                                    {(editingCategory || expense.category) && EXPENSE_CATEGORIES[editingCategory || expense.category!]?.map(sc => <option key={sc} value={sc}>{sc}</option>)}
+                                  </select>
+                                </td>
                                 <td className="px-1 py-1 border border-stone-200"><input id="edit-vat" name="vat_number" type="text" value={editingSupplierVat} onChange={e=>setEditingSupplierVat(e.target.value)} className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"/></td>
                                 <td className="px-1 py-1 border border-stone-200"><input id="edit-total" name="total_debit" type="number" step="0.01" defaultValue={expense.total_debit} required className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md text-right font-bold"/></td>
                                 <td className="px-1 py-1 border border-stone-200 text-right text-[10px] text-stone-400">Auto</td>
@@ -611,6 +764,8 @@ export default function App() {
                                       supplier_id: supplierId,
                                       supplier_name: supplier?.name ?? expense.supplier_name,
                                       item_name: (document.getElementById('edit-item') as HTMLInputElement)?.value,
+                                      category: (document.getElementById('edit-category') as HTMLSelectElement)?.value,
+                                      sub_category: (document.getElementById('edit-sub-category') as HTMLSelectElement)?.value,
                                       vat_number: (document.getElementById('edit-vat') as HTMLInputElement)?.value,
                                       total_debit: net, vat_debit: net * 0.15, total: net * 1.15,
                                       credit: expense.credit||0, total_w_vat_credit: expense.total_w_vat_credit||0,
@@ -628,6 +783,8 @@ export default function App() {
                                 <td className="px-4 py-2 text-stone-500 border border-stone-200">{expense.invoice_no}</td>
                                 <td className="px-4 py-2 text-stone-700 border border-stone-200">{expense.supplier_name}</td>
                                 <td className="px-4 py-2 text-stone-500 italic border border-stone-200">{expense.item_name}</td>
+                                <td className="px-4 py-2 text-stone-500 border border-stone-200"><span className="px-2 py-0.5 bg-stone-100 text-stone-600 rounded text-[9px] font-bold uppercase">{expense.category}</span></td>
+                                <td className="px-4 py-2 text-stone-500 border border-stone-200"><span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded text-[9px] font-bold uppercase">{expense.sub_category}</span></td>
                                 <td className="px-4 py-2 text-stone-500 border border-stone-200">{expense.vat_number}</td>
                                 <td className="px-4 py-2 text-right font-mono border border-stone-200">SR {(expense.total_debit||0).toFixed(2)}</td>
                                 <td className="px-4 py-2 text-right font-mono border border-stone-200">SR {(expense.vat_debit||0).toFixed(2)}</td>
@@ -643,6 +800,18 @@ export default function App() {
                               <td className="px-1 py-1 border border-stone-200"><input name="invoice_number" type="text" placeholder="Invoice #" className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"/></td>
                               <td className="px-1 py-1 border border-stone-200"><select name="supplier_id" onChange={e=>setAddingSupplierVat(suppliers.find(s=>s.id===e.target.value)?.vat_number||'')} className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"><option value="">Select Supplier</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></td>
                               <td className="px-1 py-1 border border-stone-200"><input name="item_name" type="text" placeholder="Item" required className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"/></td>
+                              <td className="px-1 py-1 border border-stone-200">
+                                <select name="category" onChange={e => setAddingCategory(e.target.value)} className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md">
+                                  <option value="">Category</option>
+                                  {Object.keys(EXPENSE_CATEGORIES).map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                              </td>
+                              <td className="px-1 py-1 border border-stone-200">
+                                <select name="sub_category" className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md">
+                                  <option value="">Sub-Category</option>
+                                  {addingCategory && EXPENSE_CATEGORIES[addingCategory]?.map(sc => <option key={sc} value={sc}>{sc}</option>)}
+                                </select>
+                              </td>
                               <td className="px-1 py-1 border border-stone-200"><input name="vat_number" type="text" placeholder="VAT #" value={addingSupplierVat} onChange={e=>setAddingSupplierVat(e.target.value)} className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"/></td>
                               <td className="px-1 py-1 border border-stone-200"><input name="total_debit" type="number" step="0.01" placeholder="Net amount" required className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md text-right font-bold"/></td>
                               <td className="px-1 py-1 border border-stone-200 text-right text-[10px] text-stone-400">Auto</td>
@@ -678,7 +847,7 @@ export default function App() {
                           <td colSpan={2} className="px-3 py-3 text-stone-500 uppercase tracking-wider border border-stone-200">Totals</td>
                           {activeTab==='sales'&&<SalesTotals/>}
                           {activeTab==='expenses'&&(<>
-                            <td className="px-4 py-3 border border-stone-200" colSpan={3}/>
+                            <td className="px-4 py-3 border border-stone-200" colSpan={5}/>
                             <td className="px-4 py-3 text-right border border-stone-200 font-mono">SR {filteredExpenses.reduce((a,e)=>a+(e.total_debit||0),0).toFixed(2)}</td>
                             <td className="px-4 py-3 text-right border border-stone-200 font-mono">SR {filteredExpenses.reduce((a,e)=>a+(e.vat_debit||0),0).toFixed(2)}</td>
                             <td className="px-4 py-3 text-right border border-stone-200 font-mono text-rose-600">SR {filteredExpenses.reduce((a,e)=>a+(e.total||0),0).toFixed(2)}</td>
@@ -696,6 +865,7 @@ export default function App() {
               </div>
             </>
           )}
+
         </div>
       </main>
     </div>

@@ -33,6 +33,8 @@ export interface Expense {
   credit: number;
   total_w_vat_credit: number;
   paid_by: string;
+  category?: string;
+  sub_category?: string;
 }
 
 export interface Supplier {
