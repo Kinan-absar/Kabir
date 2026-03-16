@@ -40,6 +40,13 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedPeriod, setSelectedPeriod] = useState<string>((new Date().getMonth() + 1).toString().padStart(2, '0'));
+  
+  // ── Filter states ─────────────────────────────────────────────────────────
+  const [expenseFilterSupplier, setExpenseFilterSupplier] = useState('');
+  const [expenseFilterItem, setExpenseFilterItem] = useState('');
+  const [expenseFilterPaidBy, setExpenseFilterPaidBy] = useState('');
+  const [salesFilterCategory, setSalesFilterCategory] = useState('');
+
   const [monthlyOpeningCash, setMonthlyOpeningCash] = useState(0);
   const [monthlyClosingCash, setMonthlyClosingCash] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -187,8 +194,27 @@ export default function App() {
     return (d.getMonth()+1).toString().padStart(2,'0') === selectedPeriod;
   };
 
-  const filteredSales = sales.filter(s => filterByTime(s.date) && s.date.includes(searchTerm));
-  const filteredExpenses = expenses.filter(e => filterByTime(e.date) && ((e.supplier_name||'').toLowerCase().includes(searchTerm.toLowerCase()) || (e.item_name||'').toLowerCase().includes(searchTerm.toLowerCase()) || e.date.includes(searchTerm)));
+  const filteredSales = sales.filter(s => {
+    const matchesTime = filterByTime(s.date);
+    const matchesSearch = s.date.includes(searchTerm);
+    const matchesCategory = !salesFilterCategory || (s as any)[salesFilterCategory] > 0;
+    return matchesTime && matchesSearch && matchesCategory;
+  });
+
+  const filteredExpenses = expenses.filter(e => {
+    const matchesTime = filterByTime(e.date);
+    const matchesSearch = (
+      (e.supplier_name||'').toLowerCase().includes(searchTerm.toLowerCase()) || 
+      (e.item_name||'').toLowerCase().includes(searchTerm.toLowerCase()) || 
+      (e.invoice_no||'').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      e.date.includes(searchTerm)
+    );
+    const matchesSupplier = !expenseFilterSupplier || e.supplier_name === expenseFilterSupplier;
+    const matchesItem = !expenseFilterItem || e.item_name === expenseFilterItem;
+    const matchesPaidBy = !expenseFilterPaidBy || e.paid_by === expenseFilterPaidBy;
+    
+    return matchesTime && matchesSearch && matchesSupplier && matchesItem && matchesPaidBy;
+  });
 
   const totalSalesSum = filteredSales.reduce((a, s) => a + calcTotal(s), 0);
   const totalCashSalesSum = filteredSales.reduce((a, s) => a + (s.total_cash_sales||0), 0);
@@ -351,42 +377,122 @@ export default function App() {
       </nav>
 
       <main className="lg:pl-64 min-h-screen">
-        <header className="sticky top-0 bg-white/80 backdrop-blur-md border-b border-stone-200 px-8 py-6 flex items-center justify-between z-10">
-          <div><h2 className="text-2xl font-bold tracking-tight capitalize">{activeTab}</h2><p className="text-sm text-stone-500">Manage your restaurant's financial data</p></div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center bg-white border border-stone-200 rounded-xl px-2 py-1 gap-2 shadow-sm">
-              <Calendar size={16} className="text-stone-400 ml-1"/>
-              <select value={selectedYear} onChange={e=>setSelectedYear(Number(e.target.value))} className="text-sm font-semibold bg-transparent border-none focus:ring-0 cursor-pointer">
-                {[2024,2025,2026,2027].map(y=><option key={y} value={y}>{y}</option>)}
-              </select>
-              <div className="w-px h-4 bg-stone-200"/>
-              <select value={selectedPeriod} onChange={e=>setSelectedPeriod(e.target.value)} className="text-sm font-semibold bg-transparent border-none focus:ring-0 cursor-pointer min-w-[120px]">
-                <option value="all">Full Year</option>
-                <optgroup label="Quarters">{['Q1','Q2','Q3','Q4'].map((q,i)=><option key={q} value={q}>{q} ({['Jan-Mar','Apr-Jun','Jul-Sep','Oct-Dec'][i]})</option>)}</optgroup>
-                <optgroup label="Months">{['January','February','March','April','May','June','July','August','September','October','November','December'].map((m,i)=><option key={m} value={(i+1).toString().padStart(2,'0')}>{m}</option>)}</optgroup>
-              </select>
+        <header className="sticky top-0 bg-white/80 backdrop-blur-md border-b border-stone-200 px-8 py-6 z-10">
+          <div className="flex items-center justify-between mb-4">
+            <div><h2 className="text-2xl font-bold tracking-tight capitalize">{activeTab}</h2><p className="text-sm text-stone-500">Manage your restaurant's financial data</p></div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center bg-white border border-stone-200 rounded-xl px-2 py-1 gap-2 shadow-sm">
+                <Calendar size={16} className="text-stone-400 ml-1"/>
+                <select value={selectedYear} onChange={e=>setSelectedYear(Number(e.target.value))} className="text-sm font-semibold bg-transparent border-none focus:ring-0 cursor-pointer">
+                  {[2024,2025,2026,2027].map(y=><option key={y} value={y}>{y}</option>)}
+                </select>
+                <div className="w-px h-4 bg-stone-200"/>
+                <select value={selectedPeriod} onChange={e=>setSelectedPeriod(e.target.value)} className="text-sm font-semibold bg-transparent border-none focus:ring-0 cursor-pointer min-w-[120px]">
+                  <option value="all">Full Year</option>
+                  <optgroup label="Quarters">{['Q1','Q2','Q3','Q4'].map((q,i)=><option key={q} value={q}>{q} ({['Jan-Mar','Apr-Jun','Jul-Sep','Oct-Dec'][i]})</option>)}</optgroup>
+                  <optgroup label="Months">{['January','February','March','April','May','June','July','August','September','October','November','December'].map((m,i)=><option key={m} value={(i+1).toString().padStart(2,'0')}>{m}</option>)}</optgroup>
+                </select>
+              </div>
+              <div className="relative hidden md:block">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18}/>
+                <input type="text" placeholder="Search records..." className="pl-10 pr-4 py-2 bg-white border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-500/20 w-64 shadow-sm" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)}/>
+              </div>
+              {(activeTab === 'sales' || activeTab === 'expenses') && (
+                <button
+                  onClick={() => {
+                    if (activeTab === 'sales') {
+                      exportSalesToExcel(filteredSales, `Sales_${selectedYear}_${selectedPeriod}.xlsx`);
+                    } else {
+                      exportExpensesToExcel(filteredExpenses, `Expenses_${selectedYear}_${selectedPeriod}.xlsx`);
+                    }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border border-stone-200 rounded-xl text-sm font-semibold text-stone-700 hover:bg-stone-50 shadow-sm transition-all"
+                  title="Export to Excel"
+                >
+                  <Download size={18} className="text-emerald-600" />
+                  <span className="hidden sm:inline">Export</span>
+                </button>
+              )}
             </div>
-            <div className="relative hidden md:block">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18}/>
-              <input type="text" placeholder="Search records..." className="pl-10 pr-4 py-2 bg-white border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-500/20 w-64 shadow-sm" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)}/>
-            </div>
-            {(activeTab === 'sales' || activeTab === 'expenses') && (
-              <button
-                onClick={() => {
-                  if (activeTab === 'sales') {
-                    exportSalesToExcel(filteredSales, `Sales_${selectedYear}_${selectedPeriod}.xlsx`);
-                  } else {
-                    exportExpensesToExcel(filteredExpenses, `Expenses_${selectedYear}_${selectedPeriod}.xlsx`);
-                  }
-                }}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-stone-200 rounded-xl text-sm font-semibold text-stone-700 hover:bg-stone-50 shadow-sm transition-all"
-                title="Export to Excel"
-              >
-                <Download size={18} className="text-emerald-600" />
-                <span className="hidden sm:inline">Export</span>
-              </button>
-            )}
           </div>
+
+          {/* ── Additional Filters ── */}
+          {(activeTab === 'sales' || activeTab === 'expenses') && (
+            <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-stone-100">
+              <div className="flex items-center gap-2 text-[10px] font-bold text-stone-400 uppercase tracking-widest mr-2">
+                <FileText size={12} />
+                Quick Filters:
+              </div>
+              
+              {activeTab === 'sales' && (
+                <select 
+                  value={salesFilterCategory} 
+                  onChange={e => setSalesFilterCategory(e.target.value)}
+                  className="text-xs font-semibold bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5 focus:ring-0 cursor-pointer"
+                >
+                  <option value="">All Categories</option>
+                  <option value="dining_cash">Dining (Cash)</option>
+                  <option value="dining_card">Dining (Card)</option>
+                  <option value="jahez_bistro">Jahez Bistro</option>
+                  <option value="jahez_burger">Jahez Burger</option>
+                  <option value="keeta_bistro">Keeta Bistro</option>
+                  <option value="keeta_burger">Keeta Burger</option>
+                  <option value="hunger_station_bistro">Hunger Station Bistro</option>
+                  <option value="hunger_station_burger">Hunger Station Burger</option>
+                  <option value="ninja">Ninja</option>
+                </select>
+              )}
+
+              {activeTab === 'expenses' && (
+                <>
+                  <select 
+                    value={expenseFilterSupplier} 
+                    onChange={e => setExpenseFilterSupplier(e.target.value)}
+                    className="text-xs font-semibold bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5 focus:ring-0 cursor-pointer max-w-[150px]"
+                  >
+                    <option value="">All Suppliers</option>
+                    {Array.from(new Set(expenses.map(e => e.supplier_name))).filter(Boolean).sort().map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                  <select 
+                    value={expenseFilterItem} 
+                    onChange={e => setExpenseFilterItem(e.target.value)}
+                    className="text-xs font-semibold bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5 focus:ring-0 cursor-pointer max-w-[150px]"
+                  >
+                    <option value="">All Items</option>
+                    {Array.from(new Set(expenses.map(e => e.item_name))).filter(Boolean).sort().map(i => (
+                      <option key={i} value={i}>{i}</option>
+                    ))}
+                  </select>
+                  <select 
+                    value={expenseFilterPaidBy} 
+                    onChange={e => setExpenseFilterPaidBy(e.target.value)}
+                    className="text-xs font-semibold bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5 focus:ring-0 cursor-pointer"
+                  >
+                    <option value="">All Payment Methods</option>
+                    <option value="Cash">Cash</option>
+                    <option value="Transfer">Transfer</option>
+                  </select>
+                </>
+              )}
+
+              {(salesFilterCategory || expenseFilterSupplier || expenseFilterItem || expenseFilterPaidBy || searchTerm) && (
+                <button 
+                  onClick={() => {
+                    setSalesFilterCategory('');
+                    setExpenseFilterSupplier('');
+                    setExpenseFilterItem('');
+                    setExpenseFilterPaidBy('');
+                    setSearchTerm('');
+                  }}
+                  className="text-[10px] font-bold text-rose-500 hover:text-rose-700 uppercase tracking-widest flex items-center gap-1 px-2 py-1 rounded-md hover:bg-rose-50 transition-colors"
+                >
+                  <X size={10} /> Clear All
+                </button>
+              )}
+            </div>
+          )}
         </header>
 
         <div className="p-8">
