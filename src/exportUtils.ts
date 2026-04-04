@@ -16,9 +16,10 @@ export const exportSalesToExcel = (sales: Sale[], fileName: string = 'Sales_Repo
     'Ninja': sale.ninja,
     'Discount': sale.discount,
     'Num Customers': sale.num_customers,
+    'Opening Cash': sale.opening_cash,
+    'Closing Cash Actual': sale.closing_cash_actual,
     'POS Closing Report': sale.pos_closing_report,
     'Total Cash Sales': sale.total_cash_sales,
-    'Closing Cash Actual': sale.closing_cash_actual,
   }));
 
   const worksheet = XLSX.utils.json_to_sheet(worksheetData);

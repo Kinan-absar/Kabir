@@ -130,7 +130,7 @@ export default function App() {
     const fd = new FormData(e.currentTarget);
     const date = fd.get('date') as string;
     const sale: Sale = {
-      date, day: DAYS[new Date(date).getDay()], opening_cash: 0, closing_cash_actual: 0,
+      date, day: DAYS[new Date(date).getDay()],
       dining_cash: Number(fd.get('dining_cash')) || 0,
       total_cash_sales: Number(fd.get('dining_cash')) || 0,
       dining_card: Number(fd.get('dining_card')) || 0,
@@ -646,6 +646,78 @@ export default function App() {
               </div>
 
               <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
+                {activeTab === 'expenses' && (
+                  <div className="p-6 border-b border-stone-100 bg-stone-50/30">
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className="text-sm font-bold text-stone-900 flex items-center gap-2 uppercase tracking-wider">
+                        <DollarSign size={16} className="text-emerald-600" />
+                        Cash Reconciliation ({selectedPeriod === 'all' ? 'Full Year' : selectedPeriod})
+                      </h3>
+                      <div className="flex gap-2">
+                        {!(selectedPeriod === 'all' || selectedPeriod.startsWith('Q')) ? (
+                          <button 
+                            onClick={() => handleSaveMonthlyCash(monthlyOpeningCash, monthlyClosingCash)}
+                            className="text-[10px] font-bold bg-emerald-900 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-800 transition-colors uppercase tracking-widest"
+                          >
+                            Save Reconciliation
+                          </button>
+                        ) : (
+                          <span className="text-[10px] font-bold text-stone-400 italic px-3 py-1.5">
+                            Select a month to save reconciliation
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Opening Cash</p>
+                        <input 
+                          type="number" 
+                          value={monthlyOpeningCash} 
+                          onChange={e => setMonthlyOpeningCash(Number(e.target.value))}
+                          className="w-full text-sm font-bold bg-white border border-stone-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Cash Sales (+)</p>
+                        <div className="w-full text-sm font-bold bg-stone-100 border border-stone-200 rounded-xl px-3 py-2 text-emerald-600">
+                          SR {totalCashSalesSum.toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Cash Expenses (-)</p>
+                        <div className="w-full text-sm font-bold bg-stone-100 border border-stone-200 rounded-xl px-3 py-2 text-rose-600">
+                          SR {totalCashExpensesSum.toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Expected Cash</p>
+                        <div className="w-full text-sm font-bold bg-stone-100 border border-stone-200 rounded-xl px-3 py-2 text-stone-900">
+                          SR {(monthlyOpeningCash + totalCashSalesSum - totalCashExpensesSum).toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Actual Cash</p>
+                        <input 
+                          type="number" 
+                          value={monthlyClosingCash} 
+                          onChange={e => setMonthlyClosingCash(Number(e.target.value))}
+                          className="w-full text-sm font-bold bg-white border border-stone-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Difference</p>
+                        <div className={`w-full text-sm font-bold border rounded-xl px-3 py-2 ${
+                          (monthlyClosingCash - (monthlyOpeningCash + totalCashSalesSum - totalCashExpensesSum)) === 0 
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-600' 
+                            : 'bg-rose-50 border-rose-200 text-rose-600'
+                        }`}>
+                          SR {(monthlyClosingCash - (monthlyOpeningCash + totalCashSalesSum - totalCashExpensesSum)).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="overflow-x-auto">
                   <form onSubmit={activeTab==='sales'?handleAddSale:activeTab==='expenses'?handleAddExpense:handleAddSupplier}>
                     <table className="w-full text-left border-collapse border border-stone-200">

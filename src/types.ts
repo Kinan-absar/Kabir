@@ -2,7 +2,7 @@ export interface Sale {
   id?: string;
   date: string;
   day: string;
-  opening_cash: number;
+  opening_cash?: number;
   dining_cash: number;
   total_cash_sales: number;
   dining_card: number;
@@ -16,7 +16,7 @@ export interface Sale {
   discount: number;
   num_customers: number;
   pos_closing_report: number;
-  closing_cash_actual: number;
+  closing_cash_actual?: number;
 }
 
 export interface Expense {
