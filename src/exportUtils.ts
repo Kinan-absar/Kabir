@@ -35,6 +35,7 @@ export const exportExpensesToExcel = (expenses: Expense[], fileName: string = 'E
     'Supplier Name': expense.supplier_name,
     'Item Name': expense.item_name,
     'VAT Number': expense.vat_number,
+    'Has VAT?': expense.has_vat !== false ? 'Yes' : 'No',
     'Net (ex. VAT)': expense.total_debit,
     'VAT (15%)': expense.vat_debit,
     'Total (inc. VAT)': expense.total,

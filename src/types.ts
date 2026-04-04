@@ -35,6 +35,7 @@ export interface Expense {
   paid_by: string;
   category?: string;
   sub_category?: string;
+  has_vat?: boolean;
 }
 
 export interface Supplier {

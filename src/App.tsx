@@ -6,7 +6,7 @@ import { db } from './firebase';
 import { 
   Plus, Trash2, LayoutDashboard, Receipt, TrendingUp,
   Calendar, DollarSign, Users, FileText, Search,
-  Edit2, Save, X, Shield, LogOut, Download
+  Edit2, Save, X, Shield, LogOut, Download, Check
 } from 'lucide-react';
 import { Sale, Expense, Supplier, DAYS } from './types';
 import { EXPENSE_CATEGORIES } from './constants';
@@ -55,6 +55,9 @@ export default function App() {
   const [expenseFilterCategory, setExpenseFilterCategory] = useState('');
   const [expenseFilterSubCategory, setExpenseFilterSubCategory] = useState('');
   const [salesFilterCategory, setSalesFilterCategory] = useState('');
+  
+  const [addingHasVat, setAddingHasVat] = useState(true);
+  const [editingHasVat, setEditingHasVat] = useState(true);
 
   const [monthlyOpeningCash, setMonthlyOpeningCash] = useState(0);
   const [monthlyClosingCash, setMonthlyClosingCash] = useState(0);
@@ -154,6 +157,7 @@ export default function App() {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const net = Number(fd.get('total_debit'));
+    const hasVat = fd.get('has_vat') === 'on';
     const supplierId = fd.get('supplier_id') as string;
     const supplier = suppliers.find(s => s.id === supplierId);
     const expense: Expense = {
@@ -164,8 +168,9 @@ export default function App() {
       item_name: fd.get('item_name') as string,
       vat_number: fd.get('vat_number') as string,
       total_debit: net,
-      vat_debit: net * 0.15,
-      total: net * 1.15,
+      vat_debit: hasVat ? net * 0.15 : 0,
+      total: hasVat ? net * 1.15 : net,
+      has_vat: hasVat,
       credit: Number(fd.get('credit') || 0),
       total_w_vat_credit: Number(fd.get('total_w_vat_credit') || 0),
       paid_by: fd.get('paid_by') as string,
@@ -723,7 +728,7 @@ export default function App() {
                     <table className="w-full text-left border-collapse border border-stone-200">
                       <thead className="sticky top-0 z-10 bg-stone-50 shadow-sm">
                         {activeTab==='sales'?(<tr className="border-b border-stone-200">{['Date','Day','Dining(Cash)','Dining(Card)','Jahez Bis','Jahez Bur','Keeta Bis','Keeta Bur','Hunger Bis','Hunger Bur','Ninja','Credit','Total Sales','Net','VAT','Disc','Cust','Avg','POS','Diff','Actions'].map(h=><th key={h} className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">{h}</th>)}</tr>)
-                        :activeTab==='expenses'?(<tr className="border-b border-stone-200">{['Date','Invoice #','Supplier','Item','Category','Sub-Category','VAT Number','Net (ex. VAT)','VAT (15%)','Total (inc. VAT)','Paid By','Actions'].map(h=><th key={h} className="px-3 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider border border-stone-200">{h}</th>)}</tr>)
+                        :activeTab==='expenses'?(<tr className="border-b border-stone-200">{['Date','Invoice #','Supplier','Item','Category','Sub-Category','VAT Number','Net (ex. VAT)','VAT?','VAT (15%)','Total (inc. VAT)','Paid By','Actions'].map(h=><th key={h} className="px-3 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">{h}</th>)}</tr>)
                         :(<tr className="border-b border-stone-200"><th className="px-3 py-3 text-xs font-bold text-stone-500 uppercase border border-stone-200" colSpan={2}>Supplier Name</th><th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase border border-stone-200" colSpan={2}>VAT Number</th><th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase text-center border border-stone-200" colSpan={2}>Actions</th></tr>)}
                       </thead>
                       <tbody className="divide-y divide-stone-100">
@@ -822,12 +827,22 @@ export default function App() {
                                 </td>
                                 <td className="px-1 py-1 border border-stone-200"><input id="edit-vat" name="vat_number" type="text" value={editingSupplierVat} onChange={e=>setEditingSupplierVat(e.target.value)} className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"/></td>
                                 <td className="px-1 py-1 border border-stone-200"><input id="edit-total" name="total_debit" type="number" step="0.01" defaultValue={expense.total_debit} required className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md text-right font-bold"/></td>
+                                <td className="px-1 py-1 border border-stone-200 text-center">
+                                  <input 
+                                    id="edit-has-vat" 
+                                    name="has_vat" 
+                                    type="checkbox" 
+                                    defaultChecked={expense.has_vat !== false} 
+                                    className="w-4 h-4 text-emerald-600 border-stone-300 rounded focus:ring-emerald-500"
+                                  />
+                                </td>
                                 <td className="px-1 py-1 border border-stone-200 text-right text-[10px] text-stone-400">Auto</td>
                                 <td className="px-1 py-1 border border-stone-200 text-right text-[10px] text-stone-400">Auto</td>
                                 <td className="px-1 py-1 border border-stone-200"><select id="edit-paid" name="paid_by" defaultValue={expense.paid_by} className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"><option>Cash</option><option>Transfer</option></select></td>
                                 <td className="px-1 py-1 border border-stone-200"><div className="flex gap-1 justify-center">
                                   <button type="button" onClick={()=>{
                                     const net = Number((document.getElementById('edit-total') as HTMLInputElement)?.value);
+                                    const hasVat = (document.getElementById('edit-has-vat') as HTMLInputElement)?.checked;
                                     const supplierId = (document.getElementById('edit-supplier') as HTMLSelectElement)?.value;
                                     const supplier = suppliers.find(s=>s.id===supplierId);
                                     const updated: Expense = {
@@ -839,7 +854,10 @@ export default function App() {
                                       category: (document.getElementById('edit-category') as HTMLSelectElement)?.value,
                                       sub_category: (document.getElementById('edit-sub-category') as HTMLSelectElement)?.value,
                                       vat_number: (document.getElementById('edit-vat') as HTMLInputElement)?.value,
-                                      total_debit: net, vat_debit: net * 0.15, total: net * 1.15,
+                                      total_debit: net, 
+                                      vat_debit: hasVat ? net * 0.15 : 0, 
+                                      total: hasVat ? net * 1.15 : net,
+                                      has_vat: hasVat,
                                       credit: expense.credit||0, total_w_vat_credit: expense.total_w_vat_credit||0,
                                       paid_by: (document.getElementById('edit-paid') as HTMLSelectElement)?.value,
                                     };
@@ -859,6 +877,11 @@ export default function App() {
                                 <td className="px-4 py-2 text-stone-500 border border-stone-200"><span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded text-[9px] font-bold uppercase">{expense.sub_category}</span></td>
                                 <td className="px-4 py-2 text-stone-500 border border-stone-200">{expense.vat_number}</td>
                                 <td className="px-4 py-2 text-right font-mono border border-stone-200">SR {(expense.total_debit||0).toFixed(2)}</td>
+                                <td className="px-4 py-2 text-center border border-stone-200">
+                                  <div className={`w-4 h-4 mx-auto rounded flex items-center justify-center ${expense.has_vat !== false ? 'bg-emerald-100 text-emerald-600' : 'bg-stone-100 text-stone-400'}`}>
+                                    {expense.has_vat !== false ? <Check size={10} strokeWidth={4} /> : <X size={10} strokeWidth={4} />}
+                                  </div>
+                                </td>
                                 <td className="px-4 py-2 text-right font-mono border border-stone-200">SR {(expense.vat_debit||0).toFixed(2)}</td>
                                 <td className="px-4 py-2 text-right font-bold text-rose-600 font-mono border border-stone-200 bg-stone-50">SR {(expense.total||0).toFixed(2)}</td>
                                 <td className="px-4 py-2 border border-stone-200"><span className="px-2 py-1 bg-stone-100 text-stone-600 rounded text-[10px] font-bold uppercase">{expense.paid_by}</span></td>
@@ -886,6 +909,14 @@ export default function App() {
                               </td>
                               <td className="px-1 py-1 border border-stone-200"><input name="vat_number" type="text" placeholder="VAT #" value={addingSupplierVat} onChange={e=>setAddingSupplierVat(e.target.value)} className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"/></td>
                               <td className="px-1 py-1 border border-stone-200"><input name="total_debit" type="number" step="0.01" placeholder="Net amount" required className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md text-right font-bold"/></td>
+                              <td className="px-1 py-1 border border-stone-200 text-center">
+                                <input 
+                                  name="has_vat" 
+                                  type="checkbox" 
+                                  defaultChecked={true} 
+                                  className="w-4 h-4 text-emerald-600 border-stone-300 rounded focus:ring-emerald-500"
+                                />
+                              </td>
                               <td className="px-1 py-1 border border-stone-200 text-right text-[10px] text-stone-400">Auto</td>
                               <td className="px-1 py-1 border border-stone-200 text-right text-[10px] text-stone-400">Auto</td>
                               <td className="px-1 py-1 border border-stone-200"><select name="paid_by" className="w-full text-xs px-1 py-1 border border-stone-200 rounded-md"><option>Cash</option><option>Transfer</option></select></td>
@@ -893,7 +924,7 @@ export default function App() {
                             </tr>
                           ):(
                             <tr className="hover:bg-stone-50 cursor-pointer" onClick={()=>setIsAddingExpense(true)}>
-                              <td colSpan={10} className="px-4 py-3 text-center text-stone-400 text-sm italic"><div className="flex items-center justify-center gap-2"><Plus size={16}/><span>Add New Expense Line</span></div></td>
+                              <td colSpan={13} className="px-4 py-3 text-center text-stone-400 text-sm italic"><div className="flex items-center justify-center gap-2"><Plus size={16}/><span>Add New Expense Line</span></div></td>
                             </tr>
                           )}
                         </>)}
@@ -921,7 +952,8 @@ export default function App() {
                           {activeTab==='expenses'&&(<>
                             <td className="px-4 py-3 border border-stone-200" colSpan={5}/>
                             <td className="px-4 py-3 text-right border border-stone-200 font-mono">SR {filteredExpenses.reduce((a,e)=>a+(e.total_debit||0),0).toFixed(2)}</td>
-                            <td className="px-4 py-3 text-right border border-stone-200 font-mono">SR {filteredExpenses.reduce((a,e)=>a+(e.vat_debit||0),0).toFixed(2)}</td>
+                            <td className="px-4 py-3 border border-stone-200"/>
+                            <td className="px-4 py-3 text-right border border-stone-200 font-mono">SR {filteredExpenses.reduce((a,r)=>a+(r.vat_debit||0),0).toFixed(2)}</td>
                             <td className="px-4 py-3 text-right border border-stone-200 font-mono text-rose-600">SR {filteredExpenses.reduce((a,e)=>a+(e.total||0),0).toFixed(2)}</td>
                             <td className="px-4 py-3 border border-stone-200" colSpan={2}/>
                           </>)}
