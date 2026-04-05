@@ -237,14 +237,15 @@ export default function App() {
   const totalSalesSum = filteredSales.reduce((a, s) => a + calcTotal(s), 0);
   const totalCashSalesSum = filteredSales.reduce((a, s) => a + (s.total_cash_sales||0), 0);
   const totalExpensesSum = filteredExpenses.reduce((a, e) => a + (e.total||0), 0);
+  const totalExpensesExVatSum = filteredExpenses.reduce((a, e) => a + (e.total_debit||0), 0);
   const totalCashExpensesSum = filteredExpenses.reduce((a, e) => a + (e.paid_by?.toLowerCase()==='cash' ? (e.total||0) : 0), 0);
 
   const Dashboard = () => {
     const totalCustomers = filteredSales.reduce((a, s) => a + (s.num_customers||0), 0);
     const netSales = totalSalesSum / 1.15;
-    const grossProfit = netSales - totalExpensesSum;
+    const grossProfit = netSales - totalExpensesExVatSum;
     const grossProfitMargin = netSales > 0 ? (grossProfit / netSales) * 100 : 0;
-    const costRatio = netSales > 0 ? (totalExpensesSum / netSales) * 100 : 0;
+    const costRatio = netSales > 0 ? (totalExpensesExVatSum / netSales) * 100 : 0;
     const channels = [
       { name: 'Dining (Cash)', value: filteredSales.reduce((a,s)=>a+(s.total_cash_sales||0),0) },
       { name: 'Dining (Card)', value: filteredSales.reduce((a,s)=>a+(s.dining_card||0),0) },
@@ -282,8 +283,26 @@ export default function App() {
 
     const COLORS = ['#064e3b', '#065f46', '#047857', '#059669', '#10b981', '#34d399', '#6ee7b7'];
 
+    // ── Daily Sales Report Data ──
+    const dailyReport = filteredSales.map(s => {
+      const keetaTotal = ((s.keeta_bistro || 0) + (s.keeta_burger || 0)) * 0.6;
+      const hungerTotal = ((s.hunger_station_bistro || 0) + (s.hunger_station_burger || 0)) * 0.6;
+      const jahezTotal = ((s.jahez_bistro || 0) + (s.jahez_burger || 0)) * 0.6;
+      const otherTotal = (s.dining_cash || 0) + (s.dining_card || 0) + (s.ninja || 0);
+      const adjustedTotal = otherTotal + keetaTotal + hungerTotal + jahezTotal;
+      return {
+        date: s.date,
+        cash: s.dining_cash || 0,
+        card: s.dining_card || 0,
+        keeta: keetaTotal,
+        hunger: hungerTotal,
+        jahez: jahezTotal,
+        total: adjustedTotal
+      };
+    }).sort((a, b) => b.date.localeCompare(a.date));
+
     return (
-      <div className="space-y-6 pb-12">
+      <div className="space-y-8 pb-12">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 bg-emerald-900 rounded-3xl p-8 text-white relative overflow-hidden shadow-2xl">
             <div className="relative z-10">
@@ -299,6 +318,63 @@ export default function App() {
           <div className="bg-white rounded-3xl p-8 border border-stone-200 shadow-sm flex flex-col justify-between">
             <div><p className="text-stone-400 text-sm font-medium mb-1">Efficiency</p><div className="flex items-end gap-2 mb-4"><span className="text-4xl font-light text-stone-900">{grossProfitMargin.toFixed(1)}%</span><span className="text-xs font-bold text-emerald-600 mb-1.5">Margin</span></div></div>
             <div className="space-y-4"><div className="flex items-center justify-between text-xs"><span className="text-stone-500">Cost Ratio</span><span className="font-bold text-rose-500">{costRatio.toFixed(1)}%</span></div><div className="w-full h-1.5 bg-stone-100 rounded-full overflow-hidden"><div className="h-full bg-rose-500 rounded-full" style={{width:`${costRatio}%`}} /></div></div>
+          </div>
+        </div>
+
+        {/* Daily Sales Report Section */}
+        <div className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden">
+          <div className="px-8 py-6 border-b border-stone-100 flex items-center justify-between">
+            <h4 className="text-sm font-bold text-stone-900 flex items-center gap-2">
+              <TrendingUp size={18} className="text-emerald-600" />
+              Daily Sales Report (Adjusted)
+            </h4>
+            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest bg-stone-50 px-3 py-1 rounded-full border border-stone-100">
+              Keeta, Hunger & Jahez @ 60%
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-stone-50/50 text-[10px] uppercase font-bold text-stone-400 tracking-widest">
+                <tr>
+                  <th className="px-8 py-4">Date</th>
+                  <th className="px-8 py-4 text-right">Cash</th>
+                  <th className="px-8 py-4 text-right">Card</th>
+                  <th className="px-8 py-4 text-right">Keeta (60%)</th>
+                  <th className="px-8 py-4 text-right">Hunger (60%)</th>
+                  <th className="px-8 py-4 text-right">Jahez (60%)</th>
+                  <th className="px-8 py-4 text-right bg-emerald-50/50 text-emerald-700">Adj. Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100 italic">
+                {dailyReport.slice(0, 10).map(row => (
+                  <tr key={row.date} className="hover:bg-stone-50/50 transition-colors">
+                    <td className="px-8 py-4 text-xs font-bold text-stone-900">{row.date}</td>
+                    <td className="px-8 py-4 text-xs text-right font-mono text-stone-600">SR {row.cash.toFixed(2)}</td>
+                    <td className="px-8 py-4 text-xs text-right font-mono text-stone-600">SR {row.card.toFixed(2)}</td>
+                    <td className="px-8 py-4 text-xs text-right font-mono text-stone-600">SR {row.keeta.toFixed(2)}</td>
+                    <td className="px-8 py-4 text-xs text-right font-mono text-stone-600">SR {row.hunger.toFixed(2)}</td>
+                    <td className="px-8 py-4 text-xs text-right font-mono text-stone-600">SR {row.jahez.toFixed(2)}</td>
+                    <td className="px-8 py-4 text-xs text-right font-mono font-bold text-emerald-700 bg-emerald-50/30">SR {row.total.toFixed(2)}</td>
+                  </tr>
+                ))}
+                {dailyReport.length === 0 && (
+                  <tr><td colSpan={7} className="px-8 py-8 text-center text-stone-400 text-xs">No sales data for this period</td></tr>
+                )}
+              </tbody>
+              {dailyReport.length > 0 && (
+                <tfoot className="bg-stone-50/50 border-t border-stone-200">
+                  <tr className="font-bold">
+                    <td className="px-8 py-4 text-[10px] uppercase tracking-widest text-stone-500">Totals</td>
+                    <td className="px-8 py-4 text-xs text-right font-mono text-stone-900">SR {dailyReport.reduce((a,b)=>a+b.cash,0).toFixed(2)}</td>
+                    <td className="px-8 py-4 text-xs text-right font-mono text-stone-900">SR {dailyReport.reduce((a,b)=>a+b.card,0).toFixed(2)}</td>
+                    <td className="px-8 py-4 text-xs text-right font-mono text-stone-900">SR {dailyReport.reduce((a,b)=>a+b.keeta,0).toFixed(2)}</td>
+                    <td className="px-8 py-4 text-xs text-right font-mono text-stone-900">SR {dailyReport.reduce((a,b)=>a+b.hunger,0).toFixed(2)}</td>
+                    <td className="px-8 py-4 text-xs text-right font-mono text-stone-900">SR {dailyReport.reduce((a,b)=>a+b.jahez,0).toFixed(2)}</td>
+                    <td className="px-8 py-4 text-xs text-right font-mono text-emerald-700 bg-emerald-50/50">SR {dailyReport.reduce((a,b)=>a+b.total,0).toFixed(2)}</td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
           </div>
         </div>
 
@@ -327,7 +403,11 @@ export default function App() {
                     contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '12px' }}
                     formatter={(value: number) => [`SR ${value.toLocaleString()}`, 'Spend']}
                   />
-                  <Bar dataKey="value" fill="#064e3b" radius={[0, 4, 4, 0]} barSize={24} />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={24}>
+                    {topSuppliersData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -373,28 +453,6 @@ export default function App() {
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-white rounded-3xl p-8 border border-stone-200 shadow-sm">
-            <h4 className="text-sm font-bold text-stone-900 mb-8 flex items-center gap-2"><div className="w-1.5 h-1.5 bg-emerald-600 rounded-full" />Channel Performance</h4>
-            <div className="space-y-6">{channels.map(c=>(
-              <div key={c.name}><div className="flex justify-between text-xs mb-2"><span className="text-stone-500 font-medium">{c.name}</span><span className="text-stone-900 font-bold">SR {c.value.toLocaleString()}</span></div><div className="w-full h-1 bg-stone-50 rounded-full overflow-hidden"><div className="h-full bg-emerald-600 rounded-full" style={{width:`${totalSalesSum>0?(c.value/totalSalesSum)*100:0}%`}} /></div></div>
-            ))}</div>
-          </div>
-          <div className="lg:col-span-2 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm"><p className="text-stone-400 text-xs font-bold uppercase tracking-wider mb-1">Total Customers</p><p className="text-3xl font-light text-stone-900">{totalCustomers.toLocaleString()}</p></div>
-              <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm"><p className="text-stone-400 text-xs font-bold uppercase tracking-wider mb-1">Average Check</p><p className="text-3xl font-light text-stone-900">SR {(totalCustomers>0?totalSalesSum/totalCustomers:0).toFixed(2)}</p></div>
-            </div>
-            <div className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden">
-              <div className="px-8 py-6 border-b border-stone-100"><h4 className="text-sm font-bold text-stone-900">Weekly Summary</h4></div>
-              <table className="w-full text-left">
-                <thead className="bg-stone-50/50 text-[10px] uppercase font-bold text-stone-400 tracking-widest"><tr><th className="px-8 py-4">Period</th><th className="px-8 py-4 text-right">Revenue</th><th className="px-8 py-4 text-right">Customers</th></tr></thead>
-                <tbody className="divide-y divide-stone-100">{weeks.map(w=>(<tr key={w.name} className="hover:bg-stone-50/50 transition-colors"><td className="px-8 py-4 text-xs font-bold text-stone-900">{w.name}</td><td className="px-8 py-4 text-xs text-right font-mono text-stone-600">SR {w.total.toLocaleString()}</td><td className="px-8 py-4 text-xs text-right text-stone-500">{w.customers}</td></tr>))}</tbody>
-              </table>
             </div>
           </div>
         </div>
