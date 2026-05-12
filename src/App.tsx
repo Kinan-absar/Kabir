@@ -6,7 +6,7 @@ import { db } from './firebase';
 import { 
   Plus, Trash2, LayoutDashboard, Receipt, TrendingUp,
   Calendar, DollarSign, Users, FileText, Search,
-  Edit2, Save, X, Shield, LogOut, Download, Check
+  Edit2, Save, X, Shield, LogOut, Download, Check, BookOpen, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { Sale, Expense, Supplier, DAYS } from './types';
 import { EXPENSE_CATEGORIES } from './constants';
@@ -32,7 +32,7 @@ export default function App() {
   const [userRole, setUserRole]     = useState<UserRole>('employee');
 
   // ── App state ─────────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'expenses' | 'suppliers'>('sales');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'expenses' | 'suppliers' | 'accounts'>('sales');
   const [sales, setSales] = useState<Sale[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -84,7 +84,7 @@ export default function App() {
       if (firebaseUser) {
         const role = await getUserRole(firebaseUser.uid);
         setUserRole(role);
-        setActiveTab(role === 'admin' ? 'dashboard' : 'sales');
+        setActiveTab(role === 'admin' ? 'accounts' : 'sales');
       } else {
         setUserRole('employee');
       }
@@ -239,6 +239,467 @@ export default function App() {
   const totalExpensesSum = filteredExpenses.reduce((a, e) => a + (e.total||0), 0);
   const totalExpensesExVatSum = filteredExpenses.reduce((a, e) => a + (e.total_debit||0), 0);
   const totalCashExpensesSum = filteredExpenses.reduce((a, e) => a + (e.paid_by?.toLowerCase()==='cash' ? (e.total||0) : 0), 0);
+
+  // ── Accounts Tab ──────────────────────────────────────────────────────────
+  const AccountsTab = () => {
+
+    // ── Default data from the HTML dashboards ──────────────────────────────
+    const DEFAULT_MONTHS = [
+      { month:'يناير 2026',  sales:0,      hungr:0,     ops:0,      rentR:0,       rentV:0,    rentS:3100, salary:0 },
+      { month:'فبراير 2026', sales:156299, hungr:79808, ops:73216,  rentR:12458.3, rentV:8333, rentS:3100, salary:50525 },
+      { month:'مارس 2026',   sales:146292, hungr:67862, ops:87216,  rentR:12458.3, rentV:8333, rentS:3100, salary:52878 },
+      { month:'أبريل 2026',  sales:158279, hungr:61180, ops:65738,  rentR:12458.3, rentV:8333, rentS:3100, salary:60330 },
+      { month:'مايو 2026',   sales:154413, hungr:61625, ops:101457, rentR:12458.3, rentV:8333, rentS:3100, salary:61375 },
+    ];
+    const DEFAULT_EXTRAS = [
+      { name:'اللوحة والكلادينج',                    amount:21505 },
+      { name:'الرخصة مع الرصيف',                     amount:10000 },
+      { name:'الصحون وملحقاتها',                     amount:8000 },
+      { name:'صيانة المكيفات',                       amount:3450 },
+      { name:'متفرقات للصالة',                       amount:5000 },
+      { name:'مكيف للمطبخ',                          amount:4600 },
+      { name:'صيانة للمطعم',                         amount:5000 },
+      { name:'نقل الكفالات والتجديد',                amount:123258 },
+      { name:'تأمين الفيلا',                         amount:10000 },
+      { name:'تأمين المطعم',                         amount:10000 },
+      { name:'المنيو والباركود واللوحات على الكاشير', amount:5000 },
+      { name:'طاولة الخدمة والكاشير والكرسي',        amount:3000 },
+      { name:'فواتير الكهرباء للفيلا',               amount:2731 },
+      { name:'فواتير الكهرباء للمطعم',               amount:12377.43 },
+      { name:'عقد الصيانة والسلامة',                 amount:2000 },
+      { name:'عقد رش المبيدات',                      amount:2000 },
+      { name:'مبالغ نقدية بيد جان',                  amount:130000 },
+      { name:'مبلغ نقدي بيد زياد (تساهيل)',           amount:5000 },
+      { name:'مصاريف نقل المستودع',                  amount:3500 },
+    ];
+
+    type MonthEntry = { month:string; sales:number; hungr:number; ops:number; rentR:number; rentV:number; rentS:number; salary:number; };
+    type ExtraEntry = { name:string; amount:number; };
+
+    // ── Persisted state ────────────────────────────────────────────────────
+    const [months, setMonths] = React.useState<MonthEntry[]>(() => {
+      try { return JSON.parse(localStorage.getItem('ac_months') || 'null') || DEFAULT_MONTHS; } catch { return DEFAULT_MONTHS; }
+    });
+    const [extras, setExtras] = React.useState<ExtraEntry[]>(() => {
+      try { return JSON.parse(localStorage.getItem('ac_extras') || 'null') || DEFAULT_EXTRAS; } catch { return DEFAULT_EXTRAS; }
+    });
+
+    const saveMonths = (arr: MonthEntry[]) => { localStorage.setItem('ac_months', JSON.stringify(arr)); setMonths(arr); };
+    const saveExtras = (arr: ExtraEntry[]) => { localStorage.setItem('ac_extras', JSON.stringify(arr)); setExtras(arr); };
+
+    // ── Auto-derive from Firestore sales ───────────────────────────────────
+    // Pull month-level totals from the real daily sales in Firestore.
+    // These are shown as read-only reference next to the editable manual rows.
+    const firestoreMonthMap = React.useMemo(() => {
+      const map: Record<string, {sales:number; hungr:number}> = {};
+      sales.forEach(s => {
+        const key = s.date.slice(0,7); // "YYYY-MM"
+        if (!map[key]) map[key] = { sales:0, hungr:0 };
+        const total = (s.total_cash_sales||0)+(s.dining_card||0)+(s.jahez_bistro||0)+(s.jahez_burger||0)+(s.keeta_bistro||0)+(s.keeta_burger||0)+(s.hunger_station_bistro||0)+(s.hunger_station_burger||0)+(s.ninja||0);
+        const delivery = (s.jahez_bistro||0)+(s.jahez_burger||0)+(s.keeta_bistro||0)+(s.keeta_burger||0)+(s.hunger_station_bistro||0)+(s.hunger_station_burger||0)+(s.ninja||0);
+        map[key].sales += total;
+        map[key].hungr += delivery;
+      });
+      return map;
+    }, [sales]);
+
+    // ── UI state ───────────────────────────────────────────────────────────
+    const [acPage, setAcPage] = React.useState<'overview'|'monthly'|'extras'|'add-month'|'add-extra'>('overview');
+    const [editingMonthIdx, setEditingMonthIdx] = React.useState<number|null>(null);
+    const [editMonthForm, setEditMonthForm] = React.useState<MonthEntry>({ month:'', sales:0, hungr:0, ops:0, rentR:12458.3, rentV:8333, rentS:3100, salary:0 });
+    const [addMonthForm, setAddMonthForm] = React.useState<MonthEntry>({ month:'', sales:0, hungr:0, ops:0, rentR:12458.3, rentV:8333, rentS:3100, salary:0 });
+    const [editingExtraIdx, setEditingExtraIdx] = React.useState<number|null>(null);
+    const [extraForm, setExtraForm] = React.useState<ExtraEntry>({ name:'', amount:0 });
+    const [addExtraForm, setAddExtraForm] = React.useState<ExtraEntry>({ name:'', amount:0 });
+
+    // ── Calculations ───────────────────────────────────────────────────────
+    const calcMonth = (m: MonthEntry) => {
+      const disc    = m.hungr * 0.4;
+      const net     = m.sales - disc;
+      const totalEx = m.ops + m.rentR + m.rentV + m.rentS + m.salary;
+      const profit  = net - totalEx;
+      return { disc, net, totalEx, profit };
+    };
+
+    const grandTotals = months.reduce((acc, m) => {
+      const c = calcMonth(m);
+      return { sales:acc.sales+m.sales, hungr:acc.hungr+m.hungr, disc:acc.disc+c.disc, net:acc.net+c.net, totalEx:acc.totalEx+c.totalEx, profit:acc.profit+c.profit };
+    }, { sales:0, hungr:0, disc:0, net:0, totalEx:0, profit:0 });
+
+    const extrasTotal = extras.reduce((s,e) => s+e.amount, 0);
+    const fmt = (n: number) => n.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0});
+    const fmtSAR = (n: number) => `SR ${fmt(n)}`;
+    const nf = (v: string|number) => typeof v==='string' ? parseFloat(v)||0 : v;
+
+    // ── Handlers ───────────────────────────────────────────────────────────
+    const startEditMonth = (i: number) => { setEditMonthForm({...months[i]}); setEditingMonthIdx(i); };
+    const saveEditMonth = () => {
+      if (editingMonthIdx===null) return;
+      const updated = [...months];
+      updated[editingMonthIdx] = editMonthForm;
+      saveMonths(updated);
+      setEditingMonthIdx(null);
+    };
+    const deleteMonth = (i: number) => { if (!confirm('Delete this month?')) return; saveMonths(months.filter((_,j)=>j!==i)); };
+
+    const handleAddMonth = () => {
+      if (!addMonthForm.month) return;
+      saveMonths([...months, addMonthForm]);
+      setAddMonthForm({ month:'', sales:0, hungr:0, ops:0, rentR:12458.3, rentV:8333, rentS:3100, salary:0 });
+      setAcPage('monthly');
+    };
+
+    const startEditExtra = (i: number) => { setExtraForm({...extras[i]}); setEditingExtraIdx(i); };
+    const saveEditExtra = () => {
+      if (editingExtraIdx===null) return;
+      const updated = [...extras];
+      updated[editingExtraIdx] = extraForm;
+      saveExtras(updated);
+      setEditingExtraIdx(null);
+    };
+    const handleAddExtra = () => {
+      if (!addExtraForm.name) return;
+      saveExtras([...extras, addExtraForm]);
+      setAddExtraForm({ name:'', amount:0 });
+      setAcPage('extras');
+    };
+    const deleteExtra = (i: number) => { if (!confirm('Delete?')) return; saveExtras(extras.filter((_,j)=>j!==i)); };
+
+    const navItems = [
+      { id:'overview',   label:'Overview',         icon:<TrendingUp size={15}/> },
+      { id:'monthly',    label:'Monthly Data',     icon:<Calendar size={15}/> },
+      { id:'extras',     label:'Extra Expenses',   icon:<Receipt size={15}/> },
+      { id:'add-month',  label:'Add Month',        icon:<Plus size={15}/> },
+      { id:'add-extra',  label:'Add Extra Expense',icon:<Plus size={15}/> },
+    ];
+
+    const fieldLabel = (f: string) => ({
+      month:'Month Name', sales:'Total Sales', hungr:'Delivery Sales (Hunger/Keeta/Jahez)',
+      ops:'Operations Expenses', rentR:'Restaurant Rent', rentV:'Villa Rent',
+      rentS:"Chef's Apt Rent", salary:'Salaries',
+    }[f] || f);
+
+    return (
+      <div className="flex gap-6 min-h-[70vh]">
+        {/* Sidebar */}
+        <div className="w-52 flex-shrink-0">
+          <div className="bg-slate-900 rounded-2xl p-3 space-y-1 sticky top-24">
+            <div className="px-3 pb-3 border-b border-white/10 mb-2">
+              <p className="text-xs font-bold text-white">حسابات الكبير</p>
+              <p className="text-[10px] text-slate-400">Financial Accounts</p>
+            </div>
+            {navItems.map(n => (
+              <button key={n.id} onClick={() => setAcPage(n.id as any)}
+                className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-medium transition-all
+                  ${acPage===n.id?'bg-blue-600 text-white':'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+                {n.icon}{n.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+
+          {/* ── OVERVIEW ── */}
+          {acPage==='overview' && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  {label2:'Total Sales',    label:'إجمالي المبيعات', val:grandTotals.sales,  cls:'text-blue-700'},
+                  {label2:'Discount 40%',   label:'خصم التوصيل',     val:grandTotals.disc,   cls:'text-amber-600'},
+                  {label2:'Net Sales',      label:'صافي المبيعات',   val:grandTotals.net,    cls:'text-emerald-700'},
+                  {label2:'Profit / Loss',  label:'الربح / الخسارة', val:grandTotals.profit, cls:grandTotals.profit>=0?'text-emerald-700':'text-red-600'},
+                ].map(kpi=>(
+                  <div key={kpi.label2} className="bg-white rounded-2xl p-5 border border-stone-200 shadow-sm">
+                    <p className="text-[10px] text-stone-400 font-semibold uppercase tracking-widest mb-0.5">{kpi.label2}</p>
+                    <p className="text-xs text-stone-400 mb-2">{kpi.label}</p>
+                    <p className={`text-xl font-bold ${kpi.cls}`}>{fmtSAR(kpi.val)}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-stone-100 flex items-center gap-2">
+                  <TrendingUp size={16} className="text-blue-600"/>
+                  <h4 className="font-bold text-sm">Monthly Performance — الأداء الشهري</h4>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-stone-50 text-[10px] uppercase text-stone-500 font-bold tracking-widest">
+                      <tr>
+                        <th className="px-5 py-3 text-right">الشهر</th>
+                        <th className="px-5 py-3 text-right">المبيعات</th>
+                        <th className="px-5 py-3 text-right">خصم 40%</th>
+                        <th className="px-5 py-3 text-right">صافي</th>
+                        <th className="px-5 py-3 text-right">مصاريف</th>
+                        <th className="px-5 py-3 text-right">ربح/خسارة</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {months.map((m,i)=>{
+                        const c=calcMonth(m);
+                        return (
+                          <tr key={i} className="hover:bg-stone-50 transition-colors">
+                            <td className="px-5 py-3 font-semibold text-stone-800">{m.month}</td>
+                            <td className="px-5 py-3 font-mono text-stone-600">{fmtSAR(m.sales)}</td>
+                            <td className="px-5 py-3 font-mono text-amber-600">({fmtSAR(c.disc)})</td>
+                            <td className="px-5 py-3 font-mono text-blue-700">{fmtSAR(c.net)}</td>
+                            <td className="px-5 py-3 font-mono text-red-600">({fmtSAR(c.totalEx)})</td>
+                            <td className={`px-5 py-3 font-bold font-mono ${c.profit>=0?'text-emerald-700':'text-red-600'}`}>{fmtSAR(c.profit)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot className="bg-slate-900 text-white text-xs font-bold">
+                      <tr>
+                        <td className="px-5 py-3">الإجمالي</td>
+                        <td className="px-5 py-3 font-mono">{fmtSAR(grandTotals.sales)}</td>
+                        <td className="px-5 py-3 font-mono text-amber-300">({fmtSAR(grandTotals.disc)})</td>
+                        <td className="px-5 py-3 font-mono text-blue-300">{fmtSAR(grandTotals.net)}</td>
+                        <td className="px-5 py-3 font-mono text-red-300">({fmtSAR(grandTotals.totalEx)})</td>
+                        <td className={`px-5 py-3 font-mono ${grandTotals.profit>=0?'text-green-300':'text-red-300'}`}>{fmtSAR(grandTotals.profit)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+
+              {extras.length>0&&(
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-amber-800">Extra / One-off Expenses — مصاريف إضافية</p>
+                    <p className="text-2xl font-bold text-amber-700 mt-1">{fmtSAR(extrasTotal)}</p>
+                    <p className="text-xs text-amber-500 mt-1">{extras.length} items</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-amber-600">صافي بعد المصاريف الإضافية</p>
+                    <p className={`text-2xl font-bold mt-1 ${(grandTotals.profit-extrasTotal)>=0?'text-emerald-700':'text-red-600'}`}>
+                      {fmtSAR(grandTotals.profit-extrasTotal)}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── MONTHLY DATA ── */}
+          {acPage==='monthly' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-bold text-stone-900">Monthly Data — بيانات الأشهر</h3>
+                <button onClick={()=>setAcPage('add-month')} className="flex items-center gap-1.5 text-xs font-bold bg-blue-600 text-white px-3 py-2 rounded-xl hover:bg-blue-700 transition-colors">
+                  <Plus size={14}/>Add Month
+                </button>
+              </div>
+
+              {/* Firestore live data callout */}
+              {Object.keys(firestoreMonthMap).length>0&&(
+                <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-xs text-blue-700 font-medium">
+                  📊 Firestore daily sales detected for: {Object.keys(firestoreMonthMap).join(', ')} — these totals are shown as reference below each month row.
+                </div>
+              )}
+
+              <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-stone-50 text-[10px] uppercase text-stone-500 font-bold tracking-widest">
+                    <tr>
+                      <th className="px-4 py-3 text-right">Month</th>
+                      <th className="px-4 py-3 text-right">Sales</th>
+                      <th className="px-4 py-3 text-right">Delivery</th>
+                      <th className="px-4 py-3 text-right">Disc 40%</th>
+                      <th className="px-4 py-3 text-right">Net</th>
+                      <th className="px-4 py-3 text-right">Ops</th>
+                      <th className="px-4 py-3 text-right">Salaries</th>
+                      <th className="px-4 py-3 text-right">Rent R</th>
+                      <th className="px-4 py-3 text-right">Rent V</th>
+                      <th className="px-4 py-3 text-right">Rent S</th>
+                      <th className="px-4 py-3 text-right">Total Exp</th>
+                      <th className="px-4 py-3 text-right">Profit</th>
+                      <th className="px-4 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {months.map((m,i)=>{
+                      const c=calcMonth(m);
+                      const isEditing=editingMonthIdx===i;
+                      const ef=editMonthForm;
+                      const ec=calcMonth(ef);
+                      if (isEditing) return (
+                        <React.Fragment key={i}>
+                          <tr className="bg-blue-50">
+                            {(['month','sales','hungr','ops','salary','rentR','rentV','rentS'] as (keyof MonthEntry)[]).map(f=>(
+                              <td key={f} className="px-2 py-2" colSpan={f==='month'?1:1}>
+                                <input
+                                  type={f==='month'?'text':'number'}
+                                  value={ef[f]}
+                                  onChange={e=>setEditMonthForm(p=>({...p,[f]:f==='month'?e.target.value:parseFloat(e.target.value)||0}))}
+                                  className="w-full px-2 py-1.5 border border-blue-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white min-w-[80px]"
+                                  placeholder={fieldLabel(f)}
+                                />
+                              </td>
+                            ))}
+                            <td className="px-2 py-2 font-mono text-xs text-amber-600">({fmtSAR(ec.disc)})</td>
+                            <td className="px-2 py-2 font-mono text-xs text-blue-700">{fmtSAR(ec.net)}</td>
+                            <td className="px-2 py-2 font-mono text-xs text-red-600">({fmtSAR(ec.totalEx)})</td>
+                            <td className={`px-2 py-2 font-bold font-mono text-xs ${ec.profit>=0?'text-emerald-700':'text-red-600'}`}>{fmtSAR(ec.profit)}</td>
+                            <td className="px-2 py-2 flex gap-1">
+                              <button onClick={saveEditMonth} className="text-[10px] font-bold bg-blue-600 text-white px-2 py-1 rounded-lg hover:bg-blue-700">Save</button>
+                              <button onClick={()=>setEditingMonthIdx(null)} className="text-[10px] font-bold bg-stone-200 text-stone-700 px-2 py-1 rounded-lg hover:bg-stone-300">Cancel</button>
+                            </td>
+                          </tr>
+                        </React.Fragment>
+                      );
+                      return (
+                        <tr key={i} className="hover:bg-stone-50 transition-colors">
+                          <td className="px-4 py-3 font-semibold text-stone-800 whitespace-nowrap">{m.month}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-stone-600">{fmtSAR(m.sales)}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-stone-500">{fmtSAR(m.hungr)}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-amber-600">({fmtSAR(c.disc)})</td>
+                          <td className="px-4 py-3 font-mono text-xs text-blue-700">{fmtSAR(c.net)}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-stone-600">{fmtSAR(m.ops)}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-stone-600">{fmtSAR(m.salary)}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-stone-600">{fmtSAR(m.rentR)}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-stone-600">{fmtSAR(m.rentV)}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-stone-600">{fmtSAR(m.rentS)}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-red-600">({fmtSAR(c.totalEx)})</td>
+                          <td className={`px-4 py-3 font-bold font-mono text-xs ${c.profit>=0?'text-emerald-700':'text-red-600'}`}>{fmtSAR(c.profit)}</td>
+                          <td className="px-4 py-3 flex gap-1.5">
+                            <button onClick={()=>startEditMonth(i)} className="text-[10px] font-bold text-blue-600 hover:text-blue-800 px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors">Edit</button>
+                            <button onClick={()=>deleteMonth(i)} className="text-[10px] font-bold text-red-500 hover:text-red-700 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors">Del</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="bg-slate-900 text-white text-xs font-bold">
+                    <tr>
+                      <td className="px-4 py-3" colSpan={1}>الإجمالي</td>
+                      <td className="px-4 py-3 font-mono">{fmtSAR(grandTotals.sales)}</td>
+                      <td className="px-4 py-3 font-mono">{fmtSAR(grandTotals.hungr)}</td>
+                      <td className="px-4 py-3 font-mono text-amber-300">({fmtSAR(grandTotals.disc)})</td>
+                      <td className="px-4 py-3 font-mono text-blue-300">{fmtSAR(grandTotals.net)}</td>
+                      <td colSpan={5} className="px-4 py-3 font-mono text-red-300">Total Exp: ({fmtSAR(grandTotals.totalEx)})</td>
+                      <td className="px-4 py-3 font-mono text-red-300">({fmtSAR(grandTotals.totalEx)})</td>
+                      <td className={`px-4 py-3 font-mono ${grandTotals.profit>=0?'text-green-300':'text-red-300'}`}>{fmtSAR(grandTotals.profit)}</td>
+                      <td/>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ── EXTRA EXPENSES ── */}
+          {acPage==='extras' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-stone-900">Extra / One-off Expenses — مصاريف إضافية</h3>
+                  <p className="text-xs text-stone-400 mt-0.5">Total: <strong className="text-amber-700">{fmtSAR(extrasTotal)}</strong></p>
+                </div>
+                <button onClick={()=>{setAddExtraForm({name:'',amount:0});setAcPage('add-extra');}}
+                  className="flex items-center gap-1.5 text-xs font-bold bg-blue-600 text-white px-3 py-2 rounded-xl hover:bg-blue-700 transition-colors">
+                  <Plus size={14}/>Add Item
+                </button>
+              </div>
+              <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
+                {extras.map((ex,i)=>{
+                  const isEditing=editingExtraIdx===i;
+                  return (
+                    <div key={i} className="flex items-center gap-3 px-5 py-3 border-b border-stone-100 last:border-0 hover:bg-stone-50 transition-colors">
+                      {isEditing ? (
+                        <>
+                          <input type="text" value={extraForm.name} onChange={e=>setExtraForm(p=>({...p,name:e.target.value}))}
+                            className="flex-1 px-2 py-1.5 border border-blue-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-300"/>
+                          <input type="number" value={extraForm.amount} onChange={e=>setExtraForm(p=>({...p,amount:parseFloat(e.target.value)||0}))}
+                            className="w-28 px-2 py-1.5 border border-blue-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-300"/>
+                          <button onClick={saveEditExtra} className="text-[10px] font-bold bg-blue-600 text-white px-2 py-1 rounded-lg">Save</button>
+                          <button onClick={()=>setEditingExtraIdx(null)} className="text-[10px] font-bold bg-stone-200 text-stone-700 px-2 py-1 rounded-lg">Cancel</button>
+                        </>
+                      ) : (
+                        <>
+                          <p className="flex-1 text-sm text-stone-800">{ex.name}</p>
+                          <p className="font-bold font-mono text-sm text-stone-800">{fmtSAR(ex.amount)}</p>
+                          <button onClick={()=>startEditExtra(i)} className="text-[10px] font-bold text-blue-600 px-2 py-1 rounded-lg hover:bg-blue-50">Edit</button>
+                          <button onClick={()=>deleteExtra(i)} className="text-[10px] font-bold text-red-500 px-2 py-1 rounded-lg hover:bg-red-50">Del</button>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+                {extras.length>0&&(
+                  <div className="flex items-center justify-between px-5 py-4 bg-slate-900 text-white">
+                    <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Total المجموع</span>
+                    <span className="font-bold font-mono">{fmtSAR(extrasTotal)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── ADD MONTH ── */}
+          {acPage==='add-month' && (
+            <div className="max-w-xl">
+              <h3 className="font-bold text-stone-900 mb-4">Add Month — إضافة شهر</h3>
+              <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 space-y-4">
+                {(['month','sales','hungr','ops','salary','rentR','rentV','rentS'] as (keyof MonthEntry)[]).map(f=>(
+                  <div key={f}>
+                    <label className="text-xs font-bold text-stone-600 block mb-1">{fieldLabel(f)}</label>
+                    <input
+                      type={f==='month'?'text':'number'}
+                      placeholder={f==='month'?'e.g. يونيو 2026':'0'}
+                      value={addMonthForm[f]}
+                      onChange={e=>setAddMonthForm(p=>({...p,[f]:f==='month'?e.target.value:parseFloat(e.target.value)||0}))}
+                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    />
+                  </div>
+                ))}
+                <div className="bg-stone-50 rounded-xl p-4 text-xs space-y-1 text-stone-600">
+                  <p>Discount (40%): <strong>{fmtSAR(addMonthForm.hungr*0.4)}</strong></p>
+                  <p>Net Sales: <strong>{fmtSAR(addMonthForm.sales - addMonthForm.hungr*0.4)}</strong></p>
+                  <p>Total Expenses: <strong>{fmtSAR(addMonthForm.ops+addMonthForm.salary+addMonthForm.rentR+addMonthForm.rentV+addMonthForm.rentS)}</strong></p>
+                  <p className={`font-bold ${(addMonthForm.sales-addMonthForm.hungr*0.4-addMonthForm.ops-addMonthForm.salary-addMonthForm.rentR-addMonthForm.rentV-addMonthForm.rentS)>=0?'text-emerald-700':'text-red-600'}`}>
+                    Profit/Loss: {fmtSAR(addMonthForm.sales-addMonthForm.hungr*0.4-addMonthForm.ops-addMonthForm.salary-addMonthForm.rentR-addMonthForm.rentV-addMonthForm.rentS)}
+                  </p>
+                </div>
+                <div className="flex gap-3 pt-1">
+                  <button onClick={()=>setAcPage('monthly')} className="flex-1 border border-stone-200 text-stone-600 text-sm font-semibold py-2 rounded-xl hover:bg-stone-50">Cancel</button>
+                  <button onClick={handleAddMonth} className="flex-1 bg-blue-600 text-white text-sm font-bold py-2 rounded-xl hover:bg-blue-700">Save Month</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── ADD EXTRA ── */}
+          {acPage==='add-extra' && (
+            <div className="max-w-md">
+              <h3 className="font-bold text-stone-900 mb-4">Add Extra Expense — إضافة بند مصاريف</h3>
+              <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-stone-600 block mb-1">Name — اسم البند</label>
+                  <input type="text" placeholder="e.g. صيانة المكيفات" value={addExtraForm.name}
+                    onChange={e=>setAddExtraForm(p=>({...p,name:e.target.value}))}
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"/>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-stone-600 block mb-1">Amount SAR — المبلغ</label>
+                  <input type="number" placeholder="0" value={addExtraForm.amount||''}
+                    onChange={e=>setAddExtraForm(p=>({...p,amount:parseFloat(e.target.value)||0}))}
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"/>
+                </div>
+                <div className="flex gap-3 pt-1">
+                  <button onClick={()=>setAcPage('extras')} className="flex-1 border border-stone-200 text-stone-600 text-sm font-semibold py-2 rounded-xl hover:bg-stone-50">Cancel</button>
+                  <button onClick={handleAddExtra} className="flex-1 bg-blue-600 text-white text-sm font-bold py-2 rounded-xl hover:bg-blue-700">Add Expense</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+    );
+  };
 
   const Dashboard = () => {
     const totalCustomers = filteredSales.reduce((a, s) => a + (s.num_customers||0), 0);
@@ -528,6 +989,7 @@ export default function App() {
             <button key={tab.id} onClick={()=>setActiveTab(tab.id as any)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab===tab.id?'bg-emerald-900 text-white font-semibold shadow-md':'text-stone-500 hover:bg-stone-50'}`}>{tab.icon}<span>{tab.label}</span></button>
           ))}
           {userRole==='admin'&&(<button onClick={()=>setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab==='dashboard'?'bg-emerald-900 text-white font-semibold shadow-md':'text-stone-500 hover:bg-stone-50'}`}><TrendingUp size={20}/><span>Dashboard</span></button>)}
+          {userRole==='admin'&&(<button onClick={()=>setActiveTab('accounts')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab==='accounts'?'bg-blue-700 text-white font-semibold shadow-md':'text-stone-500 hover:bg-stone-50'}`}><BookOpen size={20}/><span>Accounts</span></button>)}
         </div>
         <div className="absolute bottom-8 left-6 right-6 space-y-4">
           <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200">
@@ -700,7 +1162,7 @@ export default function App() {
         </header>
 
         <div className="p-8">
-          {activeTab==='dashboard'?<Dashboard/>:(
+          {activeTab==='dashboard'?<Dashboard/>:activeTab==='accounts'?<AccountsTab/>:(
             <>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                 <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm"><div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg w-fit mb-4"><TrendingUp size={20}/></div><p className="text-stone-500 text-sm font-medium">Total Revenue</p><p className="text-2xl font-bold mt-1">SR {totalSalesSum.toLocaleString()}</p></div>
