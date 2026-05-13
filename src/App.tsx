@@ -566,12 +566,12 @@ export default function App() {
                   <table className="w-full text-sm">
                     <thead className="bg-stone-50 text-[10px] uppercase text-stone-500 font-bold tracking-widest">
                       <tr>
-                        <th className="px-5 py-3 text-right">الشهر</th>
-                        <th className="px-5 py-3 text-right">المبيعات</th>
-                        <th className="px-5 py-3 text-right">خصم 40%</th>
-                        <th className="px-5 py-3 text-right">صافي</th>
-                        <th className="px-5 py-3 text-right">مصاريف</th>
-                        <th className="px-5 py-3 text-right">ربح/خسارة</th>
+                        <th className="px-5 py-3 text-left">الشهر</th>
+                        <th className="px-5 py-3 text-left">المبيعات</th>
+                        <th className="px-5 py-3 text-left">خصم 40%</th>
+                        <th className="px-5 py-3 text-left">صافي</th>
+                        <th className="px-5 py-3 text-left">مصاريف</th>
+                        <th className="px-5 py-3 text-left">ربح/خسارة</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-stone-100">
@@ -641,18 +641,18 @@ export default function App() {
                 <table className="w-full text-sm whitespace-nowrap">
                   <thead className="bg-stone-50 text-[10px] uppercase text-stone-500 font-bold tracking-widest">
                     <tr>
-                      <th className="px-4 py-3 text-right">Month</th>
-                      <th className="px-4 py-3 text-right">Sales</th>
-                      <th className="px-4 py-3 text-right">Delivery</th>
-                      <th className="px-4 py-3 text-right">Disc 40%</th>
-                      <th className="px-4 py-3 text-right">Net</th>
-                      <th className="px-4 py-3 text-right">Ops</th>
-                      <th className="px-4 py-3 text-right">Salaries</th>
-                      <th className="px-4 py-3 text-right">Rent R</th>
-                      <th className="px-4 py-3 text-right">Rent V</th>
-                      <th className="px-4 py-3 text-right">Rent S</th>
-                      <th className="px-4 py-3 text-right">Total Exp</th>
-                      <th className="px-4 py-3 text-right">Profit</th>
+                      <th className="px-4 py-3 text-left">Month</th>
+                      <th className="px-4 py-3 text-left">Sales</th>
+                      <th className="px-4 py-3 text-left">Delivery</th>
+                      <th className="px-4 py-3 text-left">Disc 40%</th>
+                      <th className="px-4 py-3 text-left">Net</th>
+                      <th className="px-4 py-3 text-left">Ops</th>
+                      <th className="px-4 py-3 text-left">Salaries</th>
+                      <th className="px-4 py-3 text-left">Rent R</th>
+                      <th className="px-4 py-3 text-left">Rent V</th>
+                      <th className="px-4 py-3 text-left">Rent S</th>
+                      <th className="px-4 py-3 text-left">Total Exp</th>
+                      <th className="px-4 py-3 text-left">Profit</th>
                       <th className="px-4 py-3"></th>
                     </tr>
                   </thead>
