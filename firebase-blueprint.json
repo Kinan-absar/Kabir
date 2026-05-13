@@ -1,0 +1,119 @@
+{
+  "entities": {
+    "Sale": {
+      "title": "Daily Sale Record",
+      "description": "Represents daily sales performance across various channels.",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "day": { "type": "string" },
+        "dining_cash": { "type": "number" },
+        "total_cash_sales": { "type": "number" },
+        "dining_card": { "type": "number" },
+        "jahez_bistro": { "type": "number" },
+        "jahez_burger": { "type": "number" },
+        "keeta_bistro": { "type": "number" },
+        "keeta_burger": { "type": "number" },
+        "hunger_station_bistro": { "type": "number" },
+        "hunger_station_burger": { "type": "number" },
+        "ninja": { "type": "number" },
+        "discount": { "type": "number" },
+        "num_customers": { "type": "number" },
+        "pos_closing_report": { "type": "number" }
+      },
+      "required": ["date", "day", "total_cash_sales"]
+    },
+    "Expense": {
+      "title": "Expense Record",
+      "description": "Represents an expense incurred by the business.",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "invoice_no": { "type": "string" },
+        "supplier_id": { "type": "string" },
+        "supplier_name": { "type": "string" },
+        "item_name": { "type": "string" },
+        "vat_number": { "type": "string" },
+        "total_debit": { "type": "number" },
+        "total": { "type": "number" },
+        "vat_debit": { "type": "number" },
+        "credit": { "type": "number" },
+        "total_w_vat_credit": { "type": "number" },
+        "paid_by": { "type": "string" },
+        "category": { "type": "string" },
+        "sub_category": { "type": "string" },
+        "has_vat": { "type": "boolean" }
+      },
+      "required": ["date", "item_name", "total"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Information about a business supplier.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "vat_number": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "MonthlyCash": {
+      "title": "Monthly Cash Reconciliation",
+      "description": "Opening and closing cash for a specific month.",
+      "type": "object",
+      "properties": {
+        "month_year": { "type": "string" },
+        "opening_cash": { "type": "number" },
+        "closing_cash": { "type": "number" }
+      },
+      "required": ["month_year", "opening_cash", "closing_cash"]
+    },
+    "MonthEntry": {
+      "title": "Manual Month Entry",
+      "description": "A manually entered month record for accounts.",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string" },
+        "month": { "type": "string" },
+        "sales": { "type": "number" },
+        "hungr": { "type": "number" },
+        "ops": { "type": "number" },
+        "rentR": { "type": "number" },
+        "rentV": { "type": "number" },
+        "rentS": { "type": "number" },
+        "salary": { "type": "number" },
+        "source": { "type": "string", "enum": ["auto", "manual"] },
+        "manualOps": { "type": "number" }
+      },
+      "required": ["key", "month"]
+    },
+    "ExtraEntry": {
+      "title": "Extra Expense",
+      "description": "A one-off extra expense.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "amount": { "type": "number" }
+      },
+      "required": ["name", "amount"]
+    },
+    "MonthOverride": {
+      "title": "Month Override",
+      "description": "Overrides for an auto-generated or manual month.",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string" },
+        "data": { "type": "object" }
+      },
+      "required": ["key", "data"]
+    }
+  },
+  "firestore": {
+    "/sales": { "schema": "Sale", "description": "Daily sales records" },
+    "/expenses": { "schema": "Expense", "description": "Business expenses" },
+    "/suppliers": { "schema": "Supplier", "description": "Supplier list" },
+    "/monthly_cash": { "schema": "MonthlyCash", "description": "Monthly cash reconciliation" },
+    "/manual_months": { "schema": "MonthEntry", "description": "Manually added months" },
+    "/extra_expenses": { "schema": "ExtraEntry", "description": "One-off extra expenses" },
+    "/month_overrides": { "schema": "MonthOverride", "description": "Admin overrides for months" }
+  }
+}

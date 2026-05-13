@@ -47,4 +47,33 @@ export interface Supplier {
 // UserRole is defined and exported from dataService.ts
 
 
+export interface MonthEntry {
+  id?: string;
+  key: string;           // "YYYY-MM" — unique identifier
+  month: string;         // display label
+  sales: number;
+  hungr: number;
+  ops: number;           // This will be Firestore Ops + Manual Ops
+  rentR: number;
+  rentV: number;
+  rentS: number;
+  salary: number;
+  source: 'auto' | 'manual'; // where the row came from
+  manualOps?: number;    // Extra manual ops for this month
+}
+
+export interface ExtraEntry {
+  id?: string;
+  name: string;
+  amount: number;
+}
+
+export type MonthOverrides = Partial<Omit<MonthEntry, 'key' | 'source'>> & { _hidden?: boolean };
+
+export interface MonthOverride {
+  id?: string;
+  key: string;
+  data: MonthOverrides;
+}
+
 export const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

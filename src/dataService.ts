@@ -12,7 +12,7 @@ import {
   limit,
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
-import {Sale, Expense, Supplier} from './types';
+import {Sale, Expense, Supplier, MonthEntry, ExtraEntry, MonthOverride, MonthOverrides} from './types';
 
 enum OperationType {
   CREATE = 'create',
@@ -240,5 +240,106 @@ export const saveMonthlyCashData = async (
     }
   } catch (e) {
     handleFirestoreError(e, OperationType.WRITE, 'monthly_cash');
+  }
+};
+
+// ── Manual Months ───────────────────────────────────────────────────────────
+
+export const getManualMonths = async (): Promise<MonthEntry[]> => {
+  try {
+    const snap = await getDocs(collection(db, 'manual_months'));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as MonthEntry));
+  } catch (e) {
+    handleFirestoreError(e, OperationType.LIST, 'manual_months');
+    return [];
+  }
+};
+
+export const saveManualMonth = async (month: MonthEntry): Promise<MonthEntry> => {
+  const { id, ...data } = month;
+  try {
+    if (id) {
+      await setDoc(doc(db, 'manual_months', id), data, { merge: true });
+      return { id, ...data };
+    }
+    const ref = await addDoc(collection(db, 'manual_months'), data);
+    return { id: ref.id, ...data };
+  } catch (e) {
+    handleFirestoreError(e, id ? OperationType.UPDATE : OperationType.CREATE, 'manual_months');
+    throw e;
+  }
+};
+
+export const deleteManualMonth = async (id: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, 'manual_months', id));
+  } catch (e) {
+    handleFirestoreError(e, OperationType.DELETE, `manual_months/${id}`);
+  }
+};
+
+// ── Extra Expenses ─────────────────────────────────────────────────────────
+
+export const getExtraExpenses = async (): Promise<ExtraEntry[]> => {
+  try {
+    const snap = await getDocs(collection(db, 'extra_expenses'));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as ExtraEntry));
+  } catch (e) {
+    handleFirestoreError(e, OperationType.LIST, 'extra_expenses');
+    return [];
+  }
+};
+
+export const saveExtraExpense = async (extra: ExtraEntry): Promise<ExtraEntry> => {
+  const { id, ...data } = extra;
+  try {
+    if (id) {
+      await setDoc(doc(db, 'extra_expenses', id), data, { merge: true });
+      return { id, ...data };
+    }
+    const ref = await addDoc(collection(db, 'extra_expenses'), data);
+    return { id: ref.id, ...data };
+  } catch (e) {
+    handleFirestoreError(e, id ? OperationType.UPDATE : OperationType.CREATE, 'extra_expenses');
+    throw e;
+  }
+};
+
+export const deleteExtraExpense = async (id: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, 'extra_expenses', id));
+  } catch (e) {
+    handleFirestoreError(e, OperationType.DELETE, `extra_expenses/${id}`);
+  }
+};
+
+// ── Month Overrides ────────────────────────────────────────────────────────
+
+export const getMonthOverrides = async (): Promise<Record<string, MonthOverrides>> => {
+  try {
+    const snap = await getDocs(collection(db, 'month_overrides'));
+    const map: Record<string, MonthOverrides> = {};
+    snap.docs.forEach(d => {
+      const data = d.data() as MonthOverride;
+      map[data.key] = data.data;
+    });
+    return map;
+  } catch (e) {
+    handleFirestoreError(e, OperationType.LIST, 'month_overrides');
+    return {};
+  }
+};
+
+export const saveMonthOverride = async (key: string, data: MonthOverrides): Promise<void> => {
+  try {
+    const q = query(collection(db, 'month_overrides'), where('key', '==', key), limit(1));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      await updateDoc(doc(db, 'month_overrides', snap.docs[0].id), { data } as any);
+    } else {
+      await addDoc(collection(db, 'month_overrides'), { key, data });
+    }
+  } catch (e) {
+    handleFirestoreError(e, OperationType.WRITE, 'month_overrides');
   }
 };

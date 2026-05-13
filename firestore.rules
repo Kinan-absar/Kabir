@@ -1,20 +1,37 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /sales/{document=**} {
-      allow read, write: if true;
+    // Default deny
+    match /{document=**} {
+      allow read, write: if request.auth != null;
     }
-    match /expenses/{document=**} {
-      allow read, write: if true;
+
+    match /sales/{id} {
+      allow read, write: if request.auth != null;
     }
-    match /suppliers/{document=**} {
-      allow read, write: if true;
+    match /expenses/{id} {
+      allow read, write: if request.auth != null;
     }
-    match /users/{document=**} {
-      allow read, write: if true;
+    match /suppliers/{id} {
+      allow read, write: if request.auth != null;
     }
-    match /monthly_cash/{document=**} {
-      allow read, write: if true;
+    match /monthly_cash/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /manual_months/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /extra_expenses/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /month_overrides/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /users/{userId} {
+      allow read, write: if request.auth != null;
+    }
+    match /test/connection {
+      allow read: if request.auth != null;
     }
   }
 }
