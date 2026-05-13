@@ -297,7 +297,7 @@ export default function App() {
         const stored = localStorage.getItem('ac_extras');
         if (stored) {
           const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 5) return parsed;
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
         }
         return DEFAULT_EXTRAS;
       } catch { return DEFAULT_EXTRAS; }
@@ -395,7 +395,9 @@ export default function App() {
         m.ops = fsOps + manualPart;
       });
 
-      return Object.values(all).sort((a, b) => a.key.localeCompare(b.key));
+      return Object.values(all)
+        .filter(m => !overrides[m.key]?._hidden)
+        .sort((a, b) => a.key.localeCompare(b.key));
     }, [firestoreByMonth, firestoreOpsbyMonth, manualMonths, overrides]);
 
     // ── Calculations ───────────────────────────────────────────────────────
@@ -473,6 +475,14 @@ export default function App() {
       
       const newManual = [...manualMonths, { ...addMonthForm, key, source: 'manual' }];
       saveManualMonths(newManual);
+
+      // If it was hidden, unhide it
+      if (overrides[key]?._hidden) {
+        const newOv = { ...overrides };
+        delete (newOv[key] as any)._hidden;
+        saveOverrides(newOv);
+      }
+      
       setAddMonthForm({ key:'', month:'', sales:0, hungr:0, ops:0, rentR:12458.3, rentV:8333, rentS:3100, salary:0, source:'manual' });
       setAcPage('monthly');
     };
@@ -599,6 +609,41 @@ export default function App() {
                         <td className="px-5 py-3 font-mono text-blue-300">{fmtSAR(grandTotals.net)}</td>
                         <td className="px-5 py-3 font-mono text-red-300">({fmtSAR(grandTotals.totalEx)})</td>
                         <td className={`px-5 py-3 font-mono ${grandTotals.profit>=0?'text-green-300':'text-red-300'}`}>{fmtSAR(grandTotals.profit)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+
+              {/* Extra Expenses Detailed Table in Overview */}
+              <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-stone-100 flex items-center justify-between bg-amber-50/30">
+                  <div className="flex items-center gap-2">
+                    <CreditCard size={18} className="text-amber-600"/>
+                    <h4 className="font-bold text-sm text-amber-900">Extra Expenses — مصاريف إضافية</h4>
+                  </div>
+                  <span className="text-xs font-bold text-amber-700">{fmtSAR(totalExtrasAmount)}</span>
+                </div>
+                <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-stone-50 text-[10px] uppercase text-stone-500 font-bold sticky top-0 z-10">
+                      <tr>
+                        <th className="px-6 py-3 text-left">Expense Name — اسم البند</th>
+                        <th className="px-6 py-3 text-right">Amount — المبلغ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {extras.map((ex, i) => (
+                        <tr key={i} className="hover:bg-amber-50/20 transition-colors">
+                          <td className="px-6 py-2.5 text-stone-800">{ex.name}</td>
+                          <td className="px-6 py-2.5 text-right font-mono text-stone-600">{fmtSAR(ex.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-slate-900 text-white font-bold sticky bottom-0 z-10">
+                      <tr>
+                        <td className="px-6 py-3">Grand Total المجموع الكلي</td>
+                        <td className="px-6 py-3 text-right font-mono">{fmtSAR(totalExtrasAmount)}</td>
                       </tr>
                     </tfoot>
                   </table>
