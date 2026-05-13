@@ -297,7 +297,7 @@ export default function App() {
         const stored = localStorage.getItem('ac_extras');
         if (stored) {
           const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          if (Array.isArray(parsed) && parsed.length > 5) return parsed;
         }
         return DEFAULT_EXTRAS;
       } catch { return DEFAULT_EXTRAS; }
@@ -315,8 +315,11 @@ export default function App() {
     // ── Build the YYYY-MM key for a date string ───────────────────────────
     const toKey = (dateStr: string) => dateStr.slice(0, 7);
     const keyToLabel = (key: string) => {
+      if (!key || !key.includes('-')) return key || 'Unknown';
       const [y, m] = key.split('-');
-      return `${MONTH_NAMES_AR[parseInt(m) - 1]} ${y}`;
+      const monthIdx = parseInt(m) - 1;
+      const name = MONTH_NAMES_AR[monthIdx];
+      return name ? `${name} ${y}` : key;
     };
 
     // ── Aggregate Firestore sales by month ────────────────────────────────
@@ -348,63 +351,48 @@ export default function App() {
     // ── Merge: auto (Firestore) + manual, apply overrides ──────────
     const mergedMonths = React.useMemo((): MonthEntry[] => {
       const all: Record<string, MonthEntry> = {};
-      const fsMap = firestoreByMonth as Record<string, { sales: number; hungr: number }>;
 
-      // 1. Auto rows from Firestore
-      Object.entries(fsMap).forEach(([key, fs]) => {
-        const fsOps = firestoreOpsbyMonth[key] || 0;
-        const ovManualOps = overrides[key]?.manualOps || 0;
-        all[key] = {
-          key,
-          month: keyToLabel(key),
-          sales: fs.sales,
-          hungr: fs.hungr,
-          ops: fsOps + ovManualOps,
-          rentR: 12458.3,
-          rentV: 8333,
-          rentS: 3100,
-          salary: 0,
-          source: 'auto',
-          manualOps: ovManualOps,
-        };
+      // 1. Start with Manual Months (user created)
+      manualMonths.forEach(m => {
+        all[m.key] = { ...m, source: 'manual', manualOps: m.ops }; 
       });
 
-      // 2. Manual months added by admin
-      manualMonths.forEach(m => {
-        if (!all[m.key]) {
-          const fsOps = firestoreOpsbyMonth[m.key] || 0;
-          const combinedOps = m.ops + fsOps; 
-          all[m.key] = { ...m, ops: combinedOps, source: 'manual' };
+      // 2. Add/Merge Auto Months (from Firestore)
+      const fsEntries = Object.entries(firestoreByMonth) as [string, { sales: number; hungr: number }][];
+      fsEntries.forEach(([key, fs]) => {
+        if (all[key]) {
+          // If manual exists, enrich it with Firestore sales data (it stays MANUAL)
+          all[key].sales = fs.sales;
+          all[key].hungr = fs.hungr;
+        } else {
+          all[key] = {
+            key,
+            month: keyToLabel(key),
+            sales: fs.sales,
+            hungr: fs.hungr,
+            ops: 0,
+            rentR: 12458.3,
+            rentV: 8333,
+            rentS: 3100,
+            salary: 0,
+            source: 'auto',
+            manualOps: 0,
+          };
         }
       });
 
-      // 3. Apply overrides (admin edits on top of any source)
+      // 3. Apply Overrides
       Object.entries(overrides).forEach(([key, ov]) => {
         if (all[key]) {
           all[key] = { ...all[key], ...(ov as MonthOverrides) };
-          // After applying overrides, re-ensure ops is the sum of Firestore + Manual
-          const fsOps = firestoreOpsbyMonth[key] || 0;
-          const manualPart = all[key].source === 'manual' ? all[key].ops : (all[key].manualOps || 0);
-          // Wait, if source is manual, all[key].ops WAS m.ops + fsOps. 
-          // This is getting confusing. Let's simplify:
-          // A MonthEntry's 'ops' should ALWAYS be the final display value.
-          // For auto: ops = firestoreOpsbyMonth + manualOps override
-          // For manual: ops = manual input ops + firestoreOpsbyMonth (if any)
         }
       });
 
-      // Final pass to ensure 'ops' is always correctly aggregated for display
+      // 4. Final aggregation of Ops (Firestore non-salary + Manual extras)
       Object.values(all).forEach(m => {
         const fsOps = firestoreOpsbyMonth[m.key] || 0;
-        if (m.source === 'auto') {
-          m.ops = fsOps + (m.manualOps || 0);
-        } else {
-          // For manual sources, 'ops' initially entered by user is the manual part
-          // But we want to show it combined if there happens to be Firestore data for that manual key
-          // Actually, if it's manual, we'll assume the user-entered 'ops' is the base.
-          // If Firestore data exists for that month, we add it. 
-          // Wait, manualMonths logic already did: ops = m.ops + fsOps (line 373-374)
-        }
+        const manualPart = m.manualOps || 0;
+        m.ops = fsOps + manualPart;
       });
 
       return Object.values(all).sort((a, b) => a.key.localeCompare(b.key));
