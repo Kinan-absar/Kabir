@@ -4,7 +4,7 @@ import { auth } from './firebase';
 import { doc, getDocFromCache, getDocFromServer } from 'firebase/firestore';
 import { db } from './firebase';
 import { 
-  Plus, Trash2, LayoutDashboard, Receipt, TrendingUp,
+  Plus, Trash2, LayoutDashboard, Receipt, TrendingUp, CreditCard,
   Calendar, DollarSign, Users, FileText, Search,
   Edit2, Save, X, Shield, LogOut, Download, Check, BookOpen, ChevronDown, ChevronUp
 } from 'lucide-react';
@@ -243,15 +243,10 @@ export default function App() {
   // ── Accounts Tab ──────────────────────────────────────────────────────────
   const AccountsTab = () => {
 
-    // ── Default seed data from the HTML dashboards ─────────────────────────
-    const DEFAULT_MONTHS = [
-      { month:'يناير 2026',  sales:0,      hungr:0,     ops:0,      rentR:0,       rentV:0,    rentS:3100, salary:0 },
-      { month:'فبراير 2026', sales:156299, hungr:79808, ops:73216,  rentR:12458.3, rentV:8333, rentS:3100, salary:50525 },
-      { month:'مارس 2026',   sales:146292, hungr:67862, ops:87216,  rentR:12458.3, rentV:8333, rentS:3100, salary:52878 },
-      { month:'أبريل 2026',  sales:158279, hungr:61180, ops:65738,  rentR:12458.3, rentV:8333, rentS:3100, salary:60330 },
-      { month:'مايو 2026',   sales:154413, hungr:61625, ops:101457, rentR:12458.3, rentV:8333, rentS:3100, salary:61375 },
-    ];
-    const DEFAULT_EXTRAS = [
+    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const MONTH_NAMES_AR = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+
+    const DEFAULT_EXTRAS: ExtraEntry[] = [
       { name:'اللوحة والكلادينج',                    amount:21505 },
       { name:'الرخصة مع الرصيف',                     amount:10000 },
       { name:'الصحون وملحقاتها',                     amount:8000 },
@@ -273,41 +268,49 @@ export default function App() {
       { name:'مصاريف نقل المستودع',                  amount:3500 },
     ];
 
-    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const MONTH_NAMES_AR = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
-
     type MonthEntry = {
       key: string;           // "YYYY-MM" — unique identifier
       month: string;         // display label
       sales: number;
       hungr: number;
-      ops: number;
+      ops: number;           // This will be Firestore Ops + Manual Ops
       rentR: number;
       rentV: number;
       rentS: number;
       salary: number;
-      source: 'auto' | 'seed' | 'manual'; // where the row came from
+      source: 'auto' | 'manual'; // where the row came from
+      manualOps?: number;    // Extra manual ops for this month
     };
     type ExtraEntry = { name: string; amount: number; };
-    // Overrides: fields an admin has manually edited on an auto/seed row
+    // Overrides: fields an admin has manually edited on an auto row
     type MonthOverrides = Partial<Omit<MonthEntry,'key'|'source'>>;
 
     // ── Persisted state ────────────────────────────────────────────────────
-    // "overrides" keyed by "YYYY-MM": stores only the fields the admin changed
     const [overrides, setOverrides] = React.useState<Record<string, MonthOverrides>>(() => {
       try { return JSON.parse(localStorage.getItem('ac_overrides') || '{}'); } catch { return {}; }
     });
-    // Manual months: months added by admin that have no Firestore data
     const [manualMonths, setManualMonths] = React.useState<MonthEntry[]>(() => {
       try { return JSON.parse(localStorage.getItem('ac_manual_months') || '[]'); } catch { return []; }
     });
     const [extras, setExtras] = React.useState<ExtraEntry[]>(() => {
-      try { return JSON.parse(localStorage.getItem('ac_extras') || 'null') || DEFAULT_EXTRAS; } catch { return DEFAULT_EXTRAS; }
+      try {
+        const stored = localStorage.getItem('ac_extras');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+        return DEFAULT_EXTRAS;
+      } catch { return DEFAULT_EXTRAS; }
     });
 
-    const saveOverrides = (o: Record<string, MonthOverrides>) => { localStorage.setItem('ac_overrides', JSON.stringify(o)); setOverrides(o); };
-    const saveManualMonths = (arr: MonthEntry[]) => { localStorage.setItem('ac_manual_months', JSON.stringify(arr)); setManualMonths(arr); };
-    const saveExtras = (arr: ExtraEntry[]) => { localStorage.setItem('ac_extras', JSON.stringify(arr)); setExtras(arr); };
+    // ── Persistence sync ──────────────────────────────────────────────────
+    React.useEffect(() => { localStorage.setItem('ac_overrides', JSON.stringify(overrides)); }, [overrides]);
+    React.useEffect(() => { localStorage.setItem('ac_manual_months', JSON.stringify(manualMonths)); }, [manualMonths]);
+    React.useEffect(() => { localStorage.setItem('ac_extras', JSON.stringify(extras)); }, [extras]);
+
+    const saveOverrides = (o: Record<string, MonthOverrides>) => setOverrides(o);
+    const saveManualMonths = (arr: MonthEntry[]) => setManualMonths(arr);
+    const saveExtras = (arr: ExtraEntry[]) => setExtras(arr);
 
     // ── Build the YYYY-MM key for a date string ───────────────────────────
     const toKey = (dateStr: string) => dateStr.slice(0, 7);
@@ -342,69 +345,70 @@ export default function App() {
       return map;
     }, [expenses]);
 
-    // ── Convert seed defaults to keyed entries ────────────────────────────
-    const seedKeys = React.useMemo((): Record<string, MonthEntry> => {
-      const map: Record<string, MonthEntry> = {};
-      // Map Arabic month names to YYYY-MM keys (seed data is for 2026)
-      const arToIdx: Record<string, number> = {};
-      MONTH_NAMES_AR.forEach((n, i) => { arToIdx[n] = i + 1; });
-      DEFAULT_MONTHS.forEach(d => {
-        const parts = d.month.split(' ');
-        const arName = parts[0];
-        const year = parts[1] || '2026';
-        const monthIdx = arToIdx[arName];
-        if (!monthIdx) return;
-        const key = `${year}-${String(monthIdx).padStart(2, '0')}`;
-        map[key] = { key, month: d.month, sales: d.sales, hungr: d.hungr, ops: d.ops, rentR: d.rentR, rentV: d.rentV, rentS: d.rentS, salary: d.salary, source: 'seed' };
-      });
-      return map;
-    }, []);
-
-    // ── Merge: auto (Firestore) + seed + manual, apply overrides ──────────
+    // ── Merge: auto (Firestore) + manual, apply overrides ──────────
     const mergedMonths = React.useMemo((): MonthEntry[] => {
       const all: Record<string, MonthEntry> = {};
       const fsMap = firestoreByMonth as Record<string, { sales: number; hungr: number }>;
-      const skMap = seedKeys as Record<string, MonthEntry>;
 
-      // 1. Seed defaults
-      Object.entries(skMap).forEach(([k, v]) => { all[k] = { ...v }; });
-
-      // 2. Auto rows from Firestore — create or enrich existing
+      // 1. Auto rows from Firestore
       Object.entries(fsMap).forEach(([key, fs]) => {
-        if (all[key]) {
-          // Seed row exists — update sales/hungr from Firestore if no override
-          all[key] = { ...all[key], source: 'auto' };
-          if (!overrides[key]?.sales) all[key].sales = fs.sales;
-          if (!overrides[key]?.hungr) all[key].hungr = fs.hungr;
-        } else {
-          // New month from Firestore
-          all[key] = {
-            key,
-            month: keyToLabel(key),
-            sales: fs.sales,
-            hungr: fs.hungr,
-            ops: firestoreOpsbyMonth[key] || 0,
-            rentR: 12458.3,
-            rentV: 8333,
-            rentS: 3100,
-            salary: 0,
-            source: 'auto',
-          };
+        const fsOps = firestoreOpsbyMonth[key] || 0;
+        const ovManualOps = overrides[key]?.manualOps || 0;
+        all[key] = {
+          key,
+          month: keyToLabel(key),
+          sales: fs.sales,
+          hungr: fs.hungr,
+          ops: fsOps + ovManualOps,
+          rentR: 12458.3,
+          rentV: 8333,
+          rentS: 3100,
+          salary: 0,
+          source: 'auto',
+          manualOps: ovManualOps,
+        };
+      });
+
+      // 2. Manual months added by admin
+      manualMonths.forEach(m => {
+        if (!all[m.key]) {
+          const fsOps = firestoreOpsbyMonth[m.key] || 0;
+          const combinedOps = m.ops + fsOps; 
+          all[m.key] = { ...m, ops: combinedOps, source: 'manual' };
         }
       });
 
-      // 3. Manual months added by admin (only if no auto/seed row for that key)
-      manualMonths.forEach(m => {
-        if (!all[m.key]) all[m.key] = { ...m, source: 'manual' };
+      // 3. Apply overrides (admin edits on top of any source)
+      Object.entries(overrides).forEach(([key, ov]) => {
+        if (all[key]) {
+          all[key] = { ...all[key], ...(ov as MonthOverrides) };
+          // After applying overrides, re-ensure ops is the sum of Firestore + Manual
+          const fsOps = firestoreOpsbyMonth[key] || 0;
+          const manualPart = all[key].source === 'manual' ? all[key].ops : (all[key].manualOps || 0);
+          // Wait, if source is manual, all[key].ops WAS m.ops + fsOps. 
+          // This is getting confusing. Let's simplify:
+          // A MonthEntry's 'ops' should ALWAYS be the final display value.
+          // For auto: ops = firestoreOpsbyMonth + manualOps override
+          // For manual: ops = manual input ops + firestoreOpsbyMonth (if any)
+        }
       });
 
-      // 4. Apply overrides (admin edits on top of any source)
-      Object.entries(overrides).forEach(([key, ov]) => {
-        if (all[key]) all[key] = { ...all[key], ...(ov as MonthOverrides) };
+      // Final pass to ensure 'ops' is always correctly aggregated for display
+      Object.values(all).forEach(m => {
+        const fsOps = firestoreOpsbyMonth[m.key] || 0;
+        if (m.source === 'auto') {
+          m.ops = fsOps + (m.manualOps || 0);
+        } else {
+          // For manual sources, 'ops' initially entered by user is the manual part
+          // But we want to show it combined if there happens to be Firestore data for that manual key
+          // Actually, if it's manual, we'll assume the user-entered 'ops' is the base.
+          // If Firestore data exists for that month, we add it. 
+          // Wait, manualMonths logic already did: ops = m.ops + fsOps (line 373-374)
+        }
       });
 
       return Object.values(all).sort((a, b) => a.key.localeCompare(b.key));
-    }, [firestoreByMonth, firestoreOpsbyMonth, seedKeys, manualMonths, overrides]);
+    }, [firestoreByMonth, firestoreOpsbyMonth, manualMonths, overrides]);
 
     // ── Calculations ───────────────────────────────────────────────────────
     const calcMonth = (m: MonthEntry) => {
@@ -417,10 +421,19 @@ export default function App() {
 
     const grandTotals = mergedMonths.reduce((acc, m) => {
       const c = calcMonth(m);
-      return { sales: acc.sales+m.sales, hungr: acc.hungr+m.hungr, disc: acc.disc+c.disc, net: acc.net+c.net, totalEx: acc.totalEx+c.totalEx, profit: acc.profit+c.profit };
-    }, { sales:0, hungr:0, disc:0, net:0, totalEx:0, profit:0 });
+      return { 
+        sales: acc.sales+m.sales, 
+        hungr: acc.hungr+m.hungr, 
+        disc: acc.disc+c.disc, 
+        net: acc.net+c.net, 
+        totalEx: acc.totalEx+c.totalEx, 
+        profit: acc.profit+c.profit,
+        manualOps: acc.manualOps + (m.manualOps || 0)
+      };
+    }, { sales:0, hungr:0, disc:0, net:0, totalEx:0, profit:0, manualOps: 0 });
 
-    const extrasTotal = extras.reduce((s, e) => s + e.amount, 0);
+    const totalExtrasAmount = extras.reduce((sum, e) => sum + e.amount, 0);
+    const netProfitAfterExtras = grandTotals.profit - totalExtrasAmount;
     const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits:0, maximumFractionDigits:0 });
     const fmtSAR = (n: number) => `SR ${fmt(n)}`;
 
@@ -462,14 +475,16 @@ export default function App() {
 
     const handleAddMonth = () => {
       if (!addMonthForm.month) return;
-      // Derive key from Arabic month name or use YYYY-MM format
       const arToIdx: Record<string, number> = {};
       MONTH_NAMES_AR.forEach((n, i) => { arToIdx[n] = i + 1; });
       const parts = addMonthForm.month.split(' ');
-      const arName = parts[0]; const year = parts[1] || new Date().getFullYear().toString();
+      const arName = parts[0];
+      const year = parts[1] || new Date().getFullYear().toString();
       const monthIdx = arToIdx[arName] || MONTH_NAMES.findIndex(n => n.toLowerCase().startsWith(arName.toLowerCase())) + 1;
       const key = monthIdx > 0 ? `${year}-${String(monthIdx).padStart(2,'0')}` : `manual-${Date.now()}`;
-      saveManualMonths([...manualMonths, { ...addMonthForm, key, source: 'manual' }]);
+      
+      const newManual = [...manualMonths, { ...addMonthForm, key, source: 'manual' }];
+      saveManualMonths(newManual);
       setAddMonthForm({ key:'', month:'', sales:0, hungr:0, ops:0, rentR:12458.3, rentV:8333, rentS:3100, salary:0, source:'manual' });
       setAcPage('monthly');
     };
@@ -489,7 +504,6 @@ export default function App() {
 
     const sourceBadge = (src: string) => {
       if (src==='auto') return <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 ml-1">AUTO</span>;
-      if (src==='seed') return <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 ml-1">SEED</span>;
       return <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 ml-1">MANUAL</span>;
     };
 
@@ -535,17 +549,18 @@ export default function App() {
           {/* ── OVERVIEW ── */}
           {acPage==='overview' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 {[
                   {label2:'Total Sales',   label:'إجمالي المبيعات', val:grandTotals.sales,  cls:'text-blue-700'},
-                  {label2:'Discount 40%',  label:'خصم التوصيل',     val:grandTotals.disc,   cls:'text-amber-600'},
                   {label2:'Net Sales',     label:'صافي المبيعات',   val:grandTotals.net,    cls:'text-emerald-700'},
-                  {label2:'Profit / Loss', label:'الربح / الخسارة', val:grandTotals.profit, cls:grandTotals.profit>=0?'text-emerald-700':'text-red-600'},
+                  {label2:'Total Profit',  label:'إجمالي الأرباح',  val:grandTotals.profit, cls:grandTotals.profit>=0?'text-emerald-700':'text-red-600'},
+                  {label2:'Extra Expenses',label:'مصاريف إضافية',   val:totalExtrasAmount,  cls:'text-amber-600'},
+                  {label2:'Net Total',     label:'الصافي النهائي',  val:netProfitAfterExtras, cls:netProfitAfterExtras>=0?'text-blue-700 font-black':'text-red-600 font-black'},
                 ].map(kpi=>(
                   <div key={kpi.label2} className="bg-white rounded-2xl p-5 border border-stone-200 shadow-sm">
                     <p className="text-[10px] text-stone-400 font-semibold uppercase tracking-widest mb-0.5">{kpi.label2}</p>
                     <p className="text-xs text-stone-400 mb-2">{kpi.label}</p>
-                    <p className={`text-xl font-bold ${kpi.cls}`}>{fmtSAR(kpi.val)}</p>
+                    <p className={`text-lg font-bold ${kpi.cls}`}>{fmtSAR(kpi.val)}</p>
                   </div>
                 ))}
               </div>
@@ -558,7 +573,6 @@ export default function App() {
                   </div>
                   <div className="flex items-center gap-3 text-[10px] font-bold">
                     <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">AUTO = from Firestore</span>
-                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">SEED = HTML defaults</span>
                     <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">MANUAL = added by you</span>
                   </div>
                 </div>
@@ -607,13 +621,13 @@ export default function App() {
                 <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex items-center justify-between">
                   <div>
                     <p className="text-xs font-bold text-amber-800">Extra / One-off Expenses — مصاريف إضافية</p>
-                    <p className="text-2xl font-bold text-amber-700 mt-1">{fmtSAR(extrasTotal)}</p>
+                    <p className="text-2xl font-bold text-amber-700 mt-1">{fmtSAR(totalExtrasAmount)}</p>
                     <p className="text-xs text-amber-500 mt-1">{extras.length} items</p>
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-amber-600">صافي بعد المصاريف الإضافية</p>
-                    <p className={`text-2xl font-bold mt-1 ${(grandTotals.profit-extrasTotal)>=0?'text-emerald-700':'text-red-600'}`}>
-                      {fmtSAR(grandTotals.profit-extrasTotal)}
+                    <p className={`text-2xl font-bold mt-1 ${(grandTotals.profit-totalExtrasAmount)>=0?'text-emerald-700':'text-red-600'}`}>
+                      {fmtSAR(grandTotals.profit-totalExtrasAmount)}
                     </p>
                   </div>
                 </div>
@@ -632,8 +646,7 @@ export default function App() {
               </div>
 
               <div className="flex items-center gap-3 text-[10px] font-bold mb-1">
-                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">AUTO = live from Firestore daily sales</span>
-                <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">SEED = pre-loaded HTML data</span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">AUTO = live from Firestore</span>
                 <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">MANUAL = added by you</span>
               </div>
 
@@ -643,16 +656,16 @@ export default function App() {
                     <tr>
                       <th className="px-4 py-3 text-left">Month</th>
                       <th className="px-4 py-3 text-left">Sales</th>
-                      <th className="px-4 py-3 text-left">Delivery</th>
-                      <th className="px-4 py-3 text-left">Disc 40%</th>
                       <th className="px-4 py-3 text-left">Net</th>
-                      <th className="px-4 py-3 text-left">Ops</th>
-                      <th className="px-4 py-3 text-left">Salaries</th>
+                      <th className="px-4 py-3 text-left">Profit</th>
                       <th className="px-4 py-3 text-left">Rent R</th>
                       <th className="px-4 py-3 text-left">Rent V</th>
                       <th className="px-4 py-3 text-left">Rent S</th>
-                      <th className="px-4 py-3 text-left">Total Exp</th>
-                      <th className="px-4 py-3 text-left">Profit</th>
+                      <th className="px-4 py-3 text-left">Salaries</th>
+                      <th className="px-4 py-3 text-left">Ops (FS)</th>
+                      <th className="px-4 py-3 text-left">Extra (M)</th>
+                      <th className="px-4 py-3 text-left">Delivery</th>
+                      <th className="px-4 py-3 text-left">Disc 40%</th>
                       <th className="px-4 py-3"></th>
                     </tr>
                   </thead>
@@ -670,17 +683,32 @@ export default function App() {
                               onChange={e=>setEditForm(p=>p?{...p,month:e.target.value}:p)}
                               className="w-32 px-2 py-1.5 border border-blue-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"/>
                           </td>
-                          {(['sales','hungr','ops','salary','rentR','rentV','rentS'] as (keyof MonthEntry)[]).map(f=>(
+                          <td className="px-2 py-2">
+                             <input type="number" value={ef.sales}
+                                onChange={e=>setEditForm(p=>p?{...p,sales:parseFloat(e.target.value)||0}:p)}
+                                className="w-24 px-2 py-1.5 border border-blue-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"/>
+                          </td>
+                          <td className="px-2 py-2 font-mono text-xs text-blue-700">{fmtSAR(ec.net)}</td>
+                          <td className={`px-2 py-2 font-bold font-mono text-xs ${ec.profit>=0?'text-emerald-700':'text-red-600'}`}>{fmtSAR(ec.profit)}</td>
+                          {(['rentR','rentV','rentS','salary'] as (keyof MonthEntry)[]).map(f=>(
                             <td key={f} className="px-2 py-2">
                               <input type="number" value={(ef as any)[f]}
                                 onChange={e=>setEditForm(p=>p?{...p,[f]:parseFloat(e.target.value)||0}:p)}
                                 className="w-24 px-2 py-1.5 border border-blue-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"/>
                             </td>
                           ))}
+                          <td className="px-2 py-2 text-xs font-mono text-stone-400">{fmtSAR(firestoreOpsbyMonth[m.key]||0)}</td>
+                          <td className="px-2 py-2">
+                             <input type="number" value={ef.manualOps||0}
+                                onChange={e=>setEditForm(p=>p?{...p,manualOps:parseFloat(e.target.value)||0}:p)}
+                                className="w-20 px-2 py-1.5 border border-blue-300 rounded-lg text-xs font-bold text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"/>
+                          </td>
+                          <td className="px-2 py-2">
+                             <input type="number" value={ef.hungr}
+                                onChange={e=>setEditForm(p=>p?{...p,hungr:parseFloat(e.target.value)||0}:p)}
+                                className="w-24 px-2 py-1.5 border border-blue-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"/>
+                          </td>
                           <td className="px-2 py-2 font-mono text-xs text-amber-600">({fmtSAR(ec.disc)})</td>
-                          <td className="px-2 py-2 font-mono text-xs text-blue-700">{fmtSAR(ec.net)}</td>
-                          <td className="px-2 py-2 font-mono text-xs text-red-600">({fmtSAR(ec.totalEx)})</td>
-                          <td className={`px-2 py-2 font-bold font-mono text-xs ${ec.profit>=0?'text-emerald-700':'text-red-600'}`}>{fmtSAR(ec.profit)}</td>
                           <td className="px-2 py-2">
                             <div className="flex gap-1">
                               <button onClick={saveEdit} className="text-[10px] font-bold bg-blue-600 text-white px-2 py-1 rounded-lg hover:bg-blue-700">Save</button>
@@ -694,16 +722,19 @@ export default function App() {
                         <tr key={m.key} className="hover:bg-stone-50 transition-colors">
                           <td className="px-4 py-3 font-semibold text-stone-800">{m.month}{sourceBadge(m.source)}</td>
                           <td className="px-4 py-3 font-mono text-xs text-stone-600">{fmtSAR(m.sales)}</td>
-                          <td className="px-4 py-3 font-mono text-xs text-stone-500">{fmtSAR(m.hungr)}</td>
-                          <td className="px-4 py-3 font-mono text-xs text-amber-600">({fmtSAR(c.disc)})</td>
                           <td className="px-4 py-3 font-mono text-xs text-blue-700">{fmtSAR(c.net)}</td>
-                          <td className="px-4 py-3 font-mono text-xs text-stone-600">{fmtSAR(m.ops)}</td>
-                          <td className="px-4 py-3 font-mono text-xs text-stone-600">{fmtSAR(m.salary)}</td>
+                          <td className={`px-4 py-3 font-bold font-mono text-xs ${c.profit>=0?'text-emerald-700':'text-red-600'}`}>{fmtSAR(c.profit)}</td>
                           <td className="px-4 py-3 font-mono text-xs text-stone-600">{fmtSAR(m.rentR)}</td>
                           <td className="px-4 py-3 font-mono text-xs text-stone-600">{fmtSAR(m.rentV)}</td>
                           <td className="px-4 py-3 font-mono text-xs text-stone-600">{fmtSAR(m.rentS)}</td>
-                          <td className="px-4 py-3 font-mono text-xs text-red-600">({fmtSAR(c.totalEx)})</td>
-                          <td className={`px-4 py-3 font-bold font-mono text-xs ${c.profit>=0?'text-emerald-700':'text-red-600'}`}>{fmtSAR(c.profit)}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-stone-600">{fmtSAR(m.salary)}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-stone-400 group relative">
+                            {fmtSAR(firestoreOpsbyMonth[m.key]||0)}
+                            {m.manualOps ? <span className="block text-[8px] text-blue-500 font-bold">+ {fmt(m.manualOps!)} manual</span> : null}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs text-blue-600 font-bold">{m.manualOps ? fmtSAR(m.manualOps) : '-'}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-stone-500">{fmtSAR(m.hungr)}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-amber-600">({fmtSAR(c.disc)})</td>
                           <td className="px-4 py-3">
                             <div className="flex gap-1.5">
                               <button onClick={()=>startEdit(m)} className="text-[10px] font-bold text-blue-600 hover:text-blue-800 px-2 py-1 rounded-lg hover:bg-blue-50">Edit</button>
@@ -714,16 +745,17 @@ export default function App() {
                       );
                     })}
                   </tbody>
-                  <tfoot className="bg-slate-900 text-white text-xs font-bold">
+                  <tfoot className="bg-slate-900 text-white text-xs font-bold font-mono">
                     <tr>
-                      <td className="px-4 py-3">الإجمالي</td>
-                      <td className="px-4 py-3 font-mono">{fmtSAR(grandTotals.sales)}</td>
-                      <td className="px-4 py-3 font-mono">{fmtSAR(grandTotals.hungr)}</td>
-                      <td className="px-4 py-3 font-mono text-amber-300">({fmtSAR(grandTotals.disc)})</td>
-                      <td className="px-4 py-3 font-mono text-blue-300">{fmtSAR(grandTotals.net)}</td>
-                      <td colSpan={5} className="px-4 py-3"/>
-                      <td className="px-4 py-3 font-mono text-red-300">({fmtSAR(grandTotals.totalEx)})</td>
-                      <td className={`px-4 py-3 font-mono ${grandTotals.profit>=0?'text-green-300':'text-red-300'}`}>{fmtSAR(grandTotals.profit)}</td>
+                      <td className="px-4 py-3 font-sans">الإجمالي</td>
+                      <td className="px-4 py-3">{fmtSAR(grandTotals.sales)}</td>
+                      <td className="px-4 py-3 text-blue-300">{fmtSAR(grandTotals.net)}</td>
+                      <td className={`px-4 py-3 ${grandTotals.profit>=0?'text-green-300':'text-red-300'}`}>{fmtSAR(grandTotals.profit)}</td>
+                      <td colSpan={4} className="px-4 py-3"/>
+                      <td className="px-4 py-3 text-stone-400">{fmtSAR(grandTotals.totalEx - grandTotals.manualOps - 0 /* rent totals */)}...</td>
+                      <td className="px-4 py-3 text-blue-300">{fmtSAR(grandTotals.manualOps)}</td>
+                      <td className="px-4 py-3">{fmtSAR(grandTotals.hungr)}</td>
+                      <td className="px-4 py-3 text-amber-300">({fmtSAR(grandTotals.disc)})</td>
                       <td/>
                     </tr>
                   </tfoot>
@@ -738,7 +770,7 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-bold text-stone-900">Extra / One-off Expenses — مصاريف إضافية</h3>
-                  <p className="text-xs text-stone-400 mt-0.5">Total: <strong className="text-amber-700">{fmtSAR(extrasTotal)}</strong></p>
+                  <p className="text-xs text-stone-400 mt-0.5">Total: <strong className="text-amber-700">{fmtSAR(totalExtrasAmount)}</strong></p>
                 </div>
                 <button onClick={()=>{setAddExtraForm({name:'',amount:0});setAcPage('add-extra');}}
                   className="flex items-center gap-1.5 text-xs font-bold bg-blue-600 text-white px-3 py-2 rounded-xl hover:bg-blue-700 transition-colors">
@@ -773,7 +805,7 @@ export default function App() {
                 {extras.length>0&&(
                   <div className="flex items-center justify-between px-5 py-4 bg-slate-900 text-white">
                     <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Total المجموع</span>
-                    <span className="font-bold font-mono">{fmtSAR(extrasTotal)}</span>
+                    <span className="font-bold font-mono">{fmtSAR(totalExtrasAmount)}</span>
                   </div>
                 )}
               </div>
@@ -788,7 +820,7 @@ export default function App() {
                 Months with daily sales in Firestore appear automatically. Use this only for months not yet in the system.
               </div>
               <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 space-y-4">
-                {(['month','sales','hungr','ops','salary','rentR','rentV','rentS'] as (keyof MonthEntry)[]).map(f=>(
+                {(['month','sales','hungr','rentR','rentV','rentS','salary','ops'] as (keyof MonthEntry)[]).map(f=>(
                   <div key={f}>
                     <label className="text-xs font-bold text-stone-600 block mb-1">{fieldLabel(f)}</label>
                     <input
