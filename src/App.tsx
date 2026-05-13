@@ -246,6 +246,13 @@ export default function App() {
     const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     const MONTH_NAMES_AR = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
 
+    const INITIAL_MONTHS: MonthEntry[] = [
+      { key: '2026-02', month: 'فبراير 2026', sales: 156299, hungr: 79808, ops: 73216, rentR: 12458.3, rentV: 8333, rentS: 3100, salary: 50525, source: 'manual', manualOps: 73216 },
+      { key: '2026-03', month: 'مارس 2026', sales: 146292, hungr: 67862, ops: 87216, rentR: 12458.3, rentV: 8333, rentS: 3100, salary: 52878, source: 'manual', manualOps: 87216 },
+      { key: '2026-04', month: 'أبريل 2026', sales: 158279, hungr: 61180, ops: 65738, rentR: 12458.3, rentV: 8333, rentS: 3100, salary: 60330, source: 'manual', manualOps: 65738 },
+      { key: '2026-05', month: 'مايو 2026', sales: 154413, hungr: 61625, ops: 101457, rentR: 12458.3, rentV: 8333, rentS: 3100, salary: 61375, source: 'manual', manualOps: 101457 },
+    ];
+
     const DEFAULT_EXTRAS: ExtraEntry[] = [
       { name:'اللوحة والكلادينج',                    amount:21505 },
       { name:'الرخصة مع الرصيف',                     amount:10000 },
@@ -290,7 +297,14 @@ export default function App() {
       try { return JSON.parse(localStorage.getItem('ac_overrides') || '{}'); } catch { return {}; }
     });
     const [manualMonths, setManualMonths] = React.useState<MonthEntry[]>(() => {
-      try { return JSON.parse(localStorage.getItem('ac_manual_months') || '[]'); } catch { return []; }
+      try { 
+        const stored = localStorage.getItem('ac_manual_months');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+        return INITIAL_MONTHS;
+      } catch { return INITIAL_MONTHS; }
     });
     const [extras, setExtras] = React.useState<ExtraEntry[]>(() => {
       try {
@@ -431,7 +445,7 @@ export default function App() {
     const [acPage, setAcPage] = React.useState<'overview'|'monthly'|'extras'|'add-month'|'add-extra'>('overview');
     const [editingKey, setEditingKey] = React.useState<string|null>(null);
     const [editForm, setEditForm] = React.useState<MonthEntry | null>(null);
-    const [addMonthForm, setAddMonthForm] = React.useState<MonthEntry>({ key:'', month:'', sales:0, hungr:0, ops:0, rentR:12458.3, rentV:8333, rentS:3100, salary:0, source:'manual' });
+    const [addMonthForm, setAddMonthForm] = React.useState<MonthEntry>({ key:'', month:'', sales:0, hungr:0, ops:0, rentR:12458.3, rentV:8333, rentS:3100, salary:0, source:'manual', manualOps: 0 });
     const [editingExtraIdx, setEditingExtraIdx] = React.useState<number|null>(null);
     const [extraForm, setExtraForm] = React.useState<ExtraEntry>({ name:'', amount:0 });
     const [addExtraForm, setAddExtraForm] = React.useState<ExtraEntry>({ name:'', amount:0 });
@@ -563,27 +577,24 @@ export default function App() {
                 ))}
               </div>
 
+              {/* Monthly Performance Summary Table (Summary only, no details) */}
               <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-stone-100 flex items-center justify-between">
+                <div className="px-6 py-4 border-b border-stone-100 flex items-center justify-between bg-stone-50/50">
                   <div className="flex items-center gap-2">
                     <TrendingUp size={16} className="text-blue-600"/>
-                    <h4 className="font-bold text-sm">Monthly Performance — الأداء الشهري</h4>
+                    <h4 className="font-bold text-sm text-stone-900">Monthly Performance Summary — ملخص الأداء الشهري</h4>
                   </div>
-                  <div className="flex items-center gap-3 text-[10px] font-bold">
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">AUTO = from Firestore</span>
-                    <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">MANUAL = added by you</span>
-                  </div>
+                  <button onClick={()=>setAcPage('monthly')} className="text-xs font-bold text-blue-600 hover:underline">View All / Edit — عرض الكل</button>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-stone-50 text-[10px] uppercase text-stone-500 font-bold tracking-widest">
+                  <table className="w-full text-xs">
+                    <thead className="bg-stone-50 text-[10px] uppercase text-stone-500 font-bold">
                       <tr>
-                        <th className="px-5 py-3 text-left">الشهر</th>
-                        <th className="px-5 py-3 text-left">المبيعات</th>
-                        <th className="px-5 py-3 text-left">خصم 40%</th>
-                        <th className="px-5 py-3 text-left">صافي</th>
-                        <th className="px-5 py-3 text-left">مصاريف</th>
-                        <th className="px-5 py-3 text-left">ربح/خسارة</th>
+                        <th className="px-6 py-3 text-left">Month والشهر</th>
+                        <th className="px-6 py-3 text-right">Sales المبيعات</th>
+                        <th className="px-6 py-3 text-right">Net Sales الصافي</th>
+                        <th className="px-6 py-3 text-right">Profit الربح</th>
+                        <th className="px-6 py-3 text-right">Total Expenses المصاريف</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-stone-100">
@@ -591,59 +602,30 @@ export default function App() {
                         const c = calcMonth(m);
                         return (
                           <tr key={m.key} className="hover:bg-stone-50 transition-colors">
-                            <td className="px-5 py-3 font-semibold text-stone-800">{m.month}{sourceBadge(m.source)}</td>
-                            <td className="px-5 py-3 font-mono text-stone-600">{fmtSAR(m.sales)}</td>
-                            <td className="px-5 py-3 font-mono text-amber-600">({fmtSAR(c.disc)})</td>
-                            <td className="px-5 py-3 font-mono text-blue-700">{fmtSAR(c.net)}</td>
-                            <td className="px-5 py-3 font-mono text-red-600">({fmtSAR(c.totalEx)})</td>
-                            <td className={`px-5 py-3 font-bold font-mono ${c.profit>=0?'text-emerald-700':'text-red-600'}`}>{fmtSAR(c.profit)}</td>
+                            <td className="px-6 py-3 font-semibold text-stone-800">{m.month}{sourceBadge(m.source)}</td>
+                            <td className="px-6 py-3 text-right font-mono text-stone-600">{fmtSAR(m.sales)}</td>
+                            <td className="px-6 py-3 text-right font-mono text-blue-600">{fmtSAR(c.net)}</td>
+                            <td className={`px-6 py-3 text-right font-bold font-mono ${c.profit>=0?'text-emerald-600':'text-red-500'}`}>{fmtSAR(c.profit)}</td>
+                            <td className="px-6 py-3 text-right font-mono text-stone-400 group relative">
+                               {fmtSAR(c.totalEx)}
+                               <span className="hidden group-hover:block absolute right-0 top-full mt-1 p-2 bg-stone-900 text-white rounded shadow-lg z-50 w-48 text-[10px] space-y-1">
+                                 <div className="flex justify-between"><span>Base (FS):</span><span>{fmtSAR(firestoreOpsbyMonth[m.key]||0)}</span></div>
+                                 <div className="flex justify-between"><span>Manual:</span><span>{fmtSAR(m.manualOps||0)}</span></div>
+                                 <div className="flex justify-between"><span>Salary:</span><span>{fmtSAR(m.salary)}</span></div>
+                                 <div className="flex justify-between"><span>Rents:</span><span>{fmtSAR(m.rentR+m.rentV+m.rentS)}</span></div>
+                               </span>
+                            </td>
                           </tr>
                         );
                       })}
                     </tbody>
-                    <tfoot className="bg-slate-900 text-white text-xs font-bold">
+                    <tfoot className="bg-stone-900 text-white font-bold">
                       <tr>
-                        <td className="px-5 py-3">الإجمالي</td>
-                        <td className="px-5 py-3 font-mono">{fmtSAR(grandTotals.sales)}</td>
-                        <td className="px-5 py-3 font-mono text-amber-300">({fmtSAR(grandTotals.disc)})</td>
-                        <td className="px-5 py-3 font-mono text-blue-300">{fmtSAR(grandTotals.net)}</td>
-                        <td className="px-5 py-3 font-mono text-red-300">({fmtSAR(grandTotals.totalEx)})</td>
-                        <td className={`px-5 py-3 font-mono ${grandTotals.profit>=0?'text-green-300':'text-red-300'}`}>{fmtSAR(grandTotals.profit)}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </div>
-
-              {/* Extra Expenses Detailed Table in Overview */}
-              <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-stone-100 flex items-center justify-between bg-amber-50/30">
-                  <div className="flex items-center gap-2">
-                    <CreditCard size={18} className="text-amber-600"/>
-                    <h4 className="font-bold text-sm text-amber-900">Extra Expenses — مصاريف إضافية</h4>
-                  </div>
-                  <span className="text-xs font-bold text-amber-700">{fmtSAR(totalExtrasAmount)}</span>
-                </div>
-                <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-                  <table className="w-full text-xs">
-                    <thead className="bg-stone-50 text-[10px] uppercase text-stone-500 font-bold sticky top-0 z-10">
-                      <tr>
-                        <th className="px-6 py-3 text-left">Expense Name — اسم البند</th>
-                        <th className="px-6 py-3 text-right">Amount — المبلغ</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-stone-100">
-                      {extras.map((ex, i) => (
-                        <tr key={i} className="hover:bg-amber-50/20 transition-colors">
-                          <td className="px-6 py-2.5 text-stone-800">{ex.name}</td>
-                          <td className="px-6 py-2.5 text-right font-mono text-stone-600">{fmtSAR(ex.amount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-slate-900 text-white font-bold sticky bottom-0 z-10">
-                      <tr>
-                        <td className="px-6 py-3">Grand Total المجموع الكلي</td>
-                        <td className="px-6 py-3 text-right font-mono">{fmtSAR(totalExtrasAmount)}</td>
+                        <td className="px-6 py-3 text-left uppercase text-[10px]">Grand Total الإجمالي</td>
+                        <td className="px-6 py-3 text-right font-mono">{fmtSAR(grandTotals.sales)}</td>
+                        <td className="px-6 py-3 text-right font-mono">{fmtSAR(grandTotals.net)}</td>
+                        <td className={`px-6 py-3 text-right font-mono ${grandTotals.profit>=0?'text-emerald-400':'text-red-400'}`}>{fmtSAR(grandTotals.profit)}</td>
+                        <td className="px-6 py-3 text-right font-mono">{fmtSAR(grandTotals.totalEx)}</td>
                       </tr>
                     </tfoot>
                   </table>
