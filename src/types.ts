@@ -66,6 +66,7 @@ export interface ExtraEntry {
   id?: string;
   name: string;
   amount: number;
+  month_key?: string;
 }
 
 export type MonthOverrides = Partial<Omit<MonthEntry, 'key' | 'source'>> & { _hidden?: boolean };

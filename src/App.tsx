@@ -442,13 +442,29 @@ export default function App() {
       return Object.values(all).sort((a, b) => a.key.localeCompare(b.key));
     }, [firestoreByMonth, firestoreOpsbyMonth, manualMonths, overrides]);
 
+    // Filter out hidden rows
+    const visibleMonths = React.useMemo(() => {
+      return mergedMonths.filter(m => !(overrides[m.key] as any)?._hidden);
+    }, [mergedMonths, overrides]);
+
     // ── Calculations ───────────────────────────────────────────────────────
+    const extrasByMonth = React.useMemo(() => {
+      const map: Record<string, number> = {};
+      extras.forEach(e => {
+        if (e.month_key) {
+          map[e.month_key] = (map[e.month_key] || 0) + (e.amount || 0);
+        }
+      });
+      return map;
+    }, [extras]);
+
     const calcMonth = (m: MonthEntry) => {
       const disc    = m.hungr * 0.4;
       const net     = m.sales - disc;
-      const totalEx = m.ops + m.rentR + m.rentV + m.rentS + m.salary;
+      const monthExtras = extrasByMonth[m.key] || 0;
+      const totalEx = m.ops + m.rentR + m.rentV + m.rentS + m.salary + monthExtras;
       const profit  = net - totalEx;
-      return { disc, net, totalEx, profit };
+      return { disc, net, totalEx, profit, monthExtras };
     };
 
     const grandTotals = mergedMonths.reduce((acc, m) => {
@@ -465,7 +481,9 @@ export default function App() {
     }, { sales:0, hungr:0, disc:0, net:0, totalEx:0, profit:0, manualOps: 0 });
 
     const totalExtrasAmount = extras.reduce((sum, e) => sum + e.amount, 0);
-    const netProfitAfterExtras = grandTotals.profit - totalExtrasAmount;
+    const unassignedExtrasAmount = extras.filter(e => !e.month_key).reduce((sum, e) => sum + e.amount, 0);
+    const netProfitAfterExtras = grandTotals.profit - unassignedExtrasAmount;
+    const totalVisibleExtrasAmount = visibleMonths.reduce((sum, m) => sum + (extrasByMonth[m.key] || 0), 0);
     const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits:0, maximumFractionDigits:0 });
     const fmtSAR = (n: number) => `SR ${fmt(n)}`;
 
@@ -475,8 +493,8 @@ export default function App() {
     const [editForm, setEditForm] = React.useState<MonthEntry | null>(null);
     const [addMonthForm, setAddMonthForm] = React.useState<MonthEntry>({ key:'', month:'', sales:0, hungr:0, ops:0, rentR:12458.3, rentV:8333, rentS:3100, salary:0, source:'manual' });
     const [editingExtraIdx, setEditingExtraIdx] = React.useState<number|null>(null);
-    const [extraForm, setExtraForm] = React.useState<ExtraEntry>({ name:'', amount:0 });
-    const [addExtraForm, setAddExtraForm] = React.useState<ExtraEntry>({ name:'', amount:0 });
+    const [extraForm, setExtraForm] = React.useState<ExtraEntry>({ name:'', amount:0, month_key:'' });
+    const [addExtraForm, setAddExtraForm] = React.useState<ExtraEntry>({ name:'', amount:0, month_key:'' });
 
     // ── Month edit handlers ────────────────────────────────────────────────
     const startEdit = (m: MonthEntry) => { setEditForm({ ...m }); setEditingKey(m.key); };
@@ -532,7 +550,7 @@ export default function App() {
     const handleAddExtra = async () => {
       if (!addExtraForm.name) return;
       await saveExtraData(addExtraForm);
-      setAddExtraForm({ name: '', amount: 0 }); setAcPage('extras');
+      setAddExtraForm({ name: '', amount: 0, month_key: '' }); setAcPage('extras');
     };
     const deleteExtra = async (i: number) => {
       if (!confirm('Delete?')) return;
@@ -557,9 +575,6 @@ export default function App() {
       { id:'add-month',   label:'Add Month',         icon:<Plus size={15}/> },
       { id:'add-extra',   label:'Add Extra Expense', icon:<Plus size={15}/> },
     ];
-
-    // Filter out hidden rows
-    const visibleMonths = mergedMonths.filter(m => !(overrides[m.key] as any)?._hidden);
 
     if (acLoading) return (
       <div className="flex items-center justify-center min-h-[50vh]">
@@ -672,8 +687,8 @@ export default function App() {
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-amber-600">صافي بعد المصاريف الإضافية</p>
-                    <p className={`text-2xl font-bold mt-1 ${(grandTotals.profit-totalExtrasAmount)>=0?'text-emerald-700':'text-red-600'}`}>
-                      {fmtSAR(grandTotals.profit-totalExtrasAmount)}
+                    <p className={`text-2xl font-bold mt-1 ${netProfitAfterExtras>=0?'text-emerald-700':'text-red-600'}`}>
+                      {fmtSAR(netProfitAfterExtras)}
                     </p>
                   </div>
                 </div>
@@ -710,6 +725,7 @@ export default function App() {
                       <th className="px-4 py-3 text-left">Salaries</th>
                       <th className="px-4 py-3 text-left">Ops (FS)</th>
                       <th className="px-4 py-3 text-left">Extra (M)</th>
+                      <th className="px-4 py-3 text-left text-amber-600">Extras (إضافي)</th>
                       <th className="px-4 py-3 text-left">Delivery</th>
                       <th className="px-4 py-3 text-left">Disc 40%</th>
                       <th className="px-4 py-3"></th>
@@ -749,6 +765,7 @@ export default function App() {
                                 onChange={e=>setEditForm(p=>p?{...p,manualOps:parseFloat(e.target.value)||0}:p)}
                                 className="w-20 px-2 py-1.5 border border-blue-300 rounded-lg text-xs font-bold text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"/>
                           </td>
+                          <td className="px-2 py-2 text-xs font-mono font-bold text-amber-600">{fmtSAR(extrasByMonth[m.key]||0)}</td>
                           <td className="px-2 py-2">
                              <input type="number" value={ef.hungr}
                                 onChange={e=>setEditForm(p=>p?{...p,hungr:parseFloat(e.target.value)||0}:p)}
@@ -779,6 +796,7 @@ export default function App() {
                             {m.manualOps ? <span className="block text-[8px] text-blue-500 font-bold">+ {fmt(m.manualOps!)} manual</span> : null}
                           </td>
                           <td className="px-4 py-3 font-mono text-xs text-blue-600 font-bold">{m.manualOps ? fmtSAR(m.manualOps) : '-'}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-amber-600 font-bold">{c.monthExtras ? fmtSAR(c.monthExtras) : '-'}</td>
                           <td className="px-4 py-3 font-mono text-xs text-stone-500">{fmtSAR(m.hungr)}</td>
                           <td className="px-4 py-3 font-mono text-xs text-amber-600">({fmtSAR(c.disc)})</td>
                           <td className="px-4 py-3">
@@ -800,6 +818,7 @@ export default function App() {
                       <td colSpan={4} className="px-4 py-3"/>
                       <td className="px-4 py-3 text-stone-400">{fmtSAR(grandTotals.totalEx - grandTotals.manualOps - 0 /* rent totals */)}...</td>
                       <td className="px-4 py-3 text-blue-300">{fmtSAR(grandTotals.manualOps)}</td>
+                      <td className="px-4 py-3 text-amber-300">{fmtSAR(totalVisibleExtrasAmount)}</td>
                       <td className="px-4 py-3">{fmtSAR(grandTotals.hungr)}</td>
                       <td className="px-4 py-3 text-amber-300">({fmtSAR(grandTotals.disc)})</td>
                       <td/>
@@ -818,7 +837,7 @@ export default function App() {
                   <h3 className="font-bold text-stone-900">Extra / One-off Expenses — مصاريف إضافية</h3>
                   <p className="text-xs text-stone-400 mt-0.5">Total: <strong className="text-amber-700">{fmtSAR(totalExtrasAmount)}</strong></p>
                 </div>
-                <button onClick={()=>{setAddExtraForm({name:'',amount:0});setAcPage('add-extra');}}
+                <button onClick={()=>{setAddExtraForm({name:'',amount:0,month_key:''});setAcPage('add-extra');}}
                   className="flex items-center gap-1.5 text-xs font-bold bg-blue-600 text-white px-3 py-2 rounded-xl hover:bg-blue-700 transition-colors">
                   <Plus size={14}/>Add Item
                 </button>
@@ -831,17 +850,37 @@ export default function App() {
                       {isEditing ? (
                         <>
                           <input type="text" value={extraForm.name} onChange={e=>setExtraForm(p=>({...p,name:e.target.value}))}
-                            className="flex-1 px-2 py-1.5 border border-blue-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-300"/>
+                            className="flex-1 px-2 py-1.5 border border-blue-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"/>
+                          <select value={extraForm.month_key||''} onChange={e=>setExtraForm(p=>({...p,month_key:e.target.value}))}
+                            className="w-40 px-2 py-1.5 border border-blue-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white">
+                            <option value="">-- No Month (Unassigned) --</option>
+                            {mergedMonths.map(m => (
+                              <option key={m.key} value={m.key}>{m.month}</option>
+                            ))}
+                          </select>
                           <input type="number" value={extraForm.amount} onChange={e=>setExtraForm(p=>({...p,amount:parseFloat(e.target.value)||0}))}
-                            className="w-28 px-2 py-1.5 border border-blue-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-300"/>
+                            className="w-28 px-2 py-1.5 border border-blue-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"/>
                           <button onClick={saveEditExtra} className="text-[10px] font-bold bg-blue-600 text-white px-2 py-1 rounded-lg">Save</button>
                           <button onClick={()=>setEditingExtraIdx(null)} className="text-[10px] font-bold bg-stone-200 text-stone-700 px-2 py-1 rounded-lg">Cancel</button>
                         </>
                       ) : (
                         <>
-                          <p className="flex-1 text-sm text-stone-800">{ex.name}</p>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-semibold text-stone-800">{ex.name}</p>
+                              {ex.month_key ? (
+                                <span className="text-[10px] bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full font-bold">
+                                  {keyToLabel(ex.month_key)}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] bg-stone-100 text-stone-500 px-2.5 py-0.5 rounded-full font-medium">
+                                  Unassigned
+                                </span>
+                              )}
+                            </div>
+                          </div>
                           <p className="font-bold font-mono text-sm text-stone-800">{fmtSAR(ex.amount)}</p>
-                          <button onClick={()=>{setExtraForm({...ex});setEditingExtraIdx(i);}} className="text-[10px] font-bold text-blue-600 px-2 py-1 rounded-lg hover:bg-blue-50">Edit</button>
+                          <button onClick={()=>{setExtraForm({month_key:'',...ex});setEditingExtraIdx(i);}} className="text-[10px] font-bold text-blue-600 px-2 py-1 rounded-lg hover:bg-blue-50">Edit</button>
                           <button onClick={()=>deleteExtra(i)} className="text-[10px] font-bold text-red-500 px-2 py-1 rounded-lg hover:bg-red-50">Del</button>
                         </>
                       )}
@@ -904,6 +943,17 @@ export default function App() {
                   <input type="text" placeholder="e.g. صيانة المكيفات" value={addExtraForm.name}
                     onChange={e=>setAddExtraForm(p=>({...p,name:e.target.value}))}
                     className="w-full px-3 py-2 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"/>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-stone-600 block mb-1">Month — الشهر المتعلق به</label>
+                  <select value={addExtraForm.month_key||''}
+                    onChange={e=>setAddExtraForm(p=>({...p,month_key:e.target.value}))}
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white">
+                    <option value="">-- No Month (Unassigned) --</option>
+                    {mergedMonths.map(m => (
+                      <option key={m.key} value={m.key}>{m.month}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="text-xs font-bold text-stone-600 block mb-1">Amount SAR — المبلغ</label>
