@@ -291,7 +291,10 @@ export default function App() {
             getMonthOverrides(),
           ]);
           setManualMonths(mn);
-          setExtras(ex.length > 0 ? ex : DEFAULT_EXTRAS);
+          // Combine extras from Firestore and the default extras so that any defaults that aren't in Firestore yet are still shown.
+          const firestoreNames = new Set(ex.map(item => item.name));
+          const missingDefaults = DEFAULT_EXTRAS.filter(item => !firestoreNames.has(item.name));
+          setExtras([...ex, ...missingDefaults]);
           setOverrides(ov);
         } catch (e) {
           console.error('Failed to load accounts data', e);
