@@ -17,6 +17,8 @@ export interface Sale {
   num_customers: number;
   pos_closing_report: number;
   closing_cash_actual?: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Expense {
@@ -36,6 +38,8 @@ export interface Expense {
   category?: string;
   sub_category?: string;
   has_vat?: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Supplier {
@@ -75,6 +79,27 @@ export interface MonthOverride {
   id?: string;
   key: string;
   data: MonthOverrides;
+}
+
+export interface ActivityLog {
+  id?: string;
+  timestamp: string;
+  user_email: string;
+  user_id: string;
+  action: string;
+  category: string;
+  details: string;
+  item_id?: string;
+  transaction_date?: string;
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  role: 'admin' | 'employee';
+  allowedTabs?: string[];
+  name?: string;
+  created_at?: string;
 }
 
 export const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

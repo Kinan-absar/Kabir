@@ -6,9 +6,9 @@ import { db } from './firebase';
 import { 
   Plus, Trash2, LayoutDashboard, Receipt, TrendingUp, CreditCard,
   Calendar, DollarSign, Users, FileText, Search,
-  Edit2, Save, X, Shield, LogOut, Download, Check, BookOpen, ChevronDown, ChevronUp
+  Edit2, Save, X, Shield, LogOut, Download, Check, BookOpen, ChevronDown, ChevronUp, History
 } from 'lucide-react';
-import { Sale, Expense, Supplier, DAYS, MonthEntry, ExtraEntry, MonthOverrides } from './types';
+import { Sale, Expense, Supplier, DAYS, MonthEntry, ExtraEntry, MonthOverrides, ActivityLog, UserProfile } from './types';
 import { EXPENSE_CATEGORIES } from './constants';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -23,22 +23,32 @@ import {
   getManualMonths, saveManualMonth, deleteManualMonth,
   getExtraExpenses, saveExtraExpense, deleteExtraExpense,
   getMonthOverrides, saveMonthOverride,
+  getActivityLogs,
+  getUserProfile, saveUserProfile, getAllUserProfiles, deleteUserProfile
 } from './dataService';
 import { exportSalesToExcel, exportExpensesToExcel } from './exportUtils';
 import AuthScreen from './AuthScreen';
 import Logo from './logo';
+import LogsTab from './components/LogsTab';
+import UsersTab from './components/UsersTab';
+import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
   // ── Auth state ────────────────────────────────────────────────────────────
   const [authReady, setAuthReady]   = useState(false);
   const [user, setUser]             = useState<User | null>(null);
   const [userRole, setUserRole]     = useState<UserRole>('employee');
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
   // ── App state ─────────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'expenses' | 'suppliers' | 'accounts'>('sales');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'expenses' | 'suppliers' | 'accounts' | 'logs' | 'users'>('sales');
   const [sales, setSales] = useState<Sale[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
+  const [loadingProfiles, setLoadingProfiles] = useState(false);
   const [isAddingSale, setIsAddingSale] = useState(false);
   const [isAddingExpense, setIsAddingExpense] = useState(false);
   const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
@@ -66,6 +76,38 @@ export default function App() {
   const [monthlyClosingCash, setMonthlyClosingCash] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
+
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    category?: string;
+    onConfirm: () => void | Promise<void>;
+  }>({
+    isOpen: false,
+    title: '',
+    description: '',
+    onConfirm: () => {},
+  });
+
+  const requestDelete = (title: string, description: string, category: string, onConfirm: () => void | Promise<void>) => {
+    setDeleteConfirm({
+      isOpen: true,
+      title,
+      description,
+      category,
+      onConfirm: async () => {
+        try {
+          await onConfirm();
+        } catch (e: any) {
+          setError(e.message || 'Error executing action');
+        } finally {
+          setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
 
   // Listen to Firebase Auth state
   useEffect(() => {
@@ -73,11 +115,17 @@ export default function App() {
     const testConnection = async () => {
       try {
         await getDocFromServer(doc(db, 'test', 'connection'));
+        setIsOffline(false);
       } catch (error) {
-        if (error instanceof Error && error.message.includes('the client is offline')) {
-          console.error("Please check your Firebase configuration.");
-          setError("Firebase is offline. Please check your connection or configuration.");
+        if (error instanceof Error) {
+          const errMsg = error.message.toLowerCase();
+          if (errMsg.includes('offline') || errMsg.includes('unavailable') || errMsg.includes('failed to connect') || errMsg.includes('could not reach')) {
+            console.warn("Firestore client is operating in offline/cached mode.", error);
+            setIsOffline(true);
+            return;
+          }
         }
+        console.error("Please check your Firebase configuration or network status:", error);
       }
     };
     testConnection();
@@ -85,10 +133,63 @@ export default function App() {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
-        const role = await getUserRole(firebaseUser.uid);
-        setUserRole(role);
-        setActiveTab(role === 'admin' ? 'accounts' : 'sales');
+        let profile = await getUserProfile(firebaseUser.uid);
+        let updateNeeded = false;
+        
+        if (!profile) {
+          const fetchedRole = await getUserRole(firebaseUser.uid);
+          profile = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email || '',
+            role: fetchedRole,
+            allowedTabs: fetchedRole === 'admin' 
+              ? ['dashboard', 'sales', 'expenses', 'suppliers', 'accounts', 'logs', 'users']
+              : ['sales', 'expenses', 'suppliers'],
+            created_at: new Date().toISOString()
+          };
+          updateNeeded = true;
+        } else {
+          // If profile exists in DB but does not have an email (manually created before)
+          if (!profile.email && firebaseUser.email) {
+            profile.email = firebaseUser.email;
+            updateNeeded = true;
+          }
+          if (!profile.allowedTabs || profile.allowedTabs.length === 0) {
+            profile.allowedTabs = profile.role === 'admin'
+              ? ['dashboard', 'sales', 'expenses', 'suppliers', 'accounts', 'logs', 'users']
+              : ['sales', 'expenses', 'suppliers'];
+            updateNeeded = true;
+          }
+        }
+
+        if (updateNeeded) {
+          await saveUserProfile(profile);
+        }
+
+        setUserProfile(profile);
+        setUserRole(profile.role);
+
+        // Determine default starting tab based on allowedTabs
+        const allowed = profile.allowedTabs || [];
+        if (profile.role === 'admin') {
+          if (allowed.includes('accounts')) {
+            setActiveTab('accounts');
+          } else if (allowed.length > 0) {
+            setActiveTab(allowed[0] as any);
+          } else {
+            setActiveTab('accounts');
+          }
+        } else {
+          if (allowed.includes('sales')) {
+            setActiveTab('sales');
+          } else if (allowed.length > 0) {
+            setActiveTab(allowed[0] as any);
+          } else {
+            setActiveTab('sales');
+          }
+        }
       } else {
+        setUserProfile(null);
         setUserRole('employee');
       }
       setAuthReady(true);
@@ -96,11 +197,68 @@ export default function App() {
     return () => unsub();
   }, []);
 
+  const fetchUserProfiles = async (showSpinner = true) => {
+    try {
+      if (showSpinner) setLoadingProfiles(true);
+      const profiles = await getAllUserProfiles();
+      setUserProfiles(profiles);
+      if (user) {
+        const foundSelf = profiles.find(p => p.id === user.uid);
+        if (foundSelf) {
+          setUserProfile(foundSelf);
+          setUserRole(foundSelf.role);
+        }
+      }
+    } catch (e: any) {
+      setError('Failed to load user profiles: ' + e.message);
+    } finally {
+      if (showSpinner) setLoadingProfiles(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user && userRole === 'admin' && activeTab === 'users') {
+      fetchUserProfiles();
+    }
+  }, [user, userRole, activeTab]);
+
+  const isTabAllowed = (tabId: string): boolean => {
+    if (!userProfile) return false;
+    if (tabId === 'users') {
+      return userProfile.role === 'admin';
+    }
+    const allowed = userProfile.allowedTabs || [];
+    if (allowed.length > 0) {
+      return allowed.includes(tabId);
+    }
+    if (userProfile.role === 'admin') {
+      return true;
+    }
+    return ['sales', 'expenses', 'suppliers'].includes(tabId);
+  };
+
+  useEffect(() => {
+    if (userProfile && !isTabAllowed(activeTab)) {
+      const allowed = userProfile.allowedTabs || [];
+      if (allowed.length > 0) {
+        setActiveTab(allowed[0] as any);
+      } else {
+        setActiveTab(userProfile.role === 'admin' ? 'accounts' : 'sales');
+      }
+    }
+  }, [userProfile, activeTab]);
+
   // Load data once the user is confirmed logged in
   useEffect(() => {
     if (!user) return;
     Promise.all([fetchSales(), fetchExpenses(), fetchSuppliers()]).finally(() => setLoading(false));
   }, [user]);
+
+  useEffect(() => {
+    if (user && userRole === 'admin' && activeTab === 'logs') {
+      fetchLogs();
+    }
+  }, [user, userRole, activeTab]);
 
   useEffect(() => {
     if (selectedPeriod !== 'all' && !selectedPeriod.startsWith('Q')) {
@@ -111,6 +269,16 @@ export default function App() {
   const fetchSales = async () => { try { setSales(await getSales()); } catch (e: any) { setError('Failed to load sales: ' + e.message); } };
   const fetchExpenses = async () => { try { setExpenses(await getExpenses()); } catch (e: any) { setError('Failed to load expenses: ' + e.message); } };
   const fetchSuppliers = async () => { try { setSuppliers(await getSuppliers()); } catch (e: any) { setError('Failed to load suppliers: ' + e.message); } };
+  const fetchLogs = async () => {
+    try {
+      setLoadingLogs(true);
+      setActivityLogs(await getActivityLogs());
+    } catch (e: any) {
+      setError('Failed to load activity logs: ' + e.message);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
   const fetchMonthlyCash = async (my: string) => {
     try {
       const data = await getMonthlyCash(my);
@@ -152,7 +320,13 @@ export default function App() {
       pos_closing_report: Number(fd.get('pos_closing_report')) || 0,
     };
     const id = (fd.get('id') as string) || editingSaleId || undefined;
-    try { await saveSale(id ? { ...sale, id } : sale); setEditingSaleId(null); setIsAddingSale(false); await fetchSales(); }
+    try { 
+      await saveSale(id ? { ...sale, id } : sale); 
+      setEditingSaleId(null); 
+      setIsAddingSale(false); 
+      await fetchSales(); 
+      if (userRole === 'admin') fetchLogs();
+    }
     catch (e: any) { setError('Failed to save sale: ' + e.message); }
   };
 
@@ -181,7 +355,14 @@ export default function App() {
       sub_category: fd.get('sub_category') as string,
     };
     const id = (fd.get('id') as string) || editingExpenseId || undefined;
-    try { await saveExpense(id ? { ...expense, id } : expense); setEditingExpenseId(null); setIsAddingExpense(false); setAddingSupplierVat(''); await fetchExpenses(); }
+    try { 
+      await saveExpense(id ? { ...expense, id } : expense); 
+      setEditingExpenseId(null); 
+      setIsAddingExpense(false); 
+      setAddingSupplierVat(''); 
+      await fetchExpenses(); 
+      if (userRole === 'admin') fetchLogs();
+    }
     catch (e: any) { setError('Failed to save expense: ' + e.message); }
   };
 
@@ -190,13 +371,66 @@ export default function App() {
   const handleAddSupplier = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = e.currentTarget; const fd = new FormData(form);
-    try { await saveSupplier({ name: fd.get('supplier_name') as string, vat_number: fd.get('supplier_vat') as string }); await fetchSuppliers(); form.reset(); }
+    try { 
+      await saveSupplier({ name: fd.get('supplier_name') as string, vat_number: fd.get('supplier_vat') as string }); 
+      await fetchSuppliers(); 
+      form.reset(); 
+      if (userRole === 'admin') fetchLogs();
+    }
     catch (e: any) { setError('Failed to save supplier: ' + e.message); }
   };
 
-  const handleDeleteSale = async (id: string) => { if (!confirm('Are you sure?')) return; try { await deleteSaleDb(id); await fetchSales(); } catch (e: any) { setError(e.message); } };
-  const handleDeleteExpense = async (id: string) => { if (!confirm('Are you sure?')) return; try { await deleteExpenseDb(id); await fetchExpenses(); } catch (e: any) { setError(e.message); } };
-  const handleDeleteSupplier = async (id: string) => { if (!confirm('Are you sure?')) return; try { await deleteSupplierDb(id); await fetchSuppliers(); } catch (e: any) { setError(e.message); } };
+  const handleDeleteSale = async (id: string) => { 
+    const saleItem = sales.find(s => s.id === id);
+    const detailsMsg = saleItem 
+      ? `This will permanently delete the daily sale record for ${saleItem.date} (${saleItem.day}) with Net Sales of SR ${(saleItem.total_cash_sales || 0).toLocaleString()}.`
+      : 'Are you sure you want to permanently delete this daily sale record?';
+    
+    requestDelete(
+      'Delete Daily Sale Record',
+      `${detailsMsg} This action is irreversible and will update the activity logs.`,
+      'sale',
+      async () => {
+        await deleteSaleDb(id); 
+        await fetchSales(); 
+        if (userRole === 'admin') fetchLogs();
+      }
+    );
+  };
+  const handleDeleteExpense = async (id: string) => { 
+    const expenseItem = expenses.find(e => e.id === id);
+    const detailsMsg = expenseItem
+      ? `This will permanently delete the expense for "${expenseItem.item_name}" from "${expenseItem.supplier_name}" on ${expenseItem.date} (Amount: SR ${(expenseItem.total || 0).toLocaleString()}).`
+      : 'Are you sure you want to permanently delete this expense record?';
+
+    requestDelete(
+      'Delete Expense Record',
+      `${detailsMsg} This action is irreversible and will update the activity logs.`,
+      'expense',
+      async () => {
+        await deleteExpenseDb(id); 
+        await fetchExpenses(); 
+        if (userRole === 'admin') fetchLogs();
+      }
+    );
+  };
+  const handleDeleteSupplier = async (id: string) => { 
+    const supplierItem = suppliers.find(s => s.id === id);
+    const detailsMsg = supplierItem
+      ? `This will permanently delete supplier "${supplierItem.name}" (VAT: ${supplierItem.vat_number || 'N/A'}).`
+      : 'Are you sure you want to permanently delete this supplier?';
+
+    requestDelete(
+      'Delete Supplier',
+      `${detailsMsg} This may affect logs or entries associated with this supplier.`,
+      'supplier',
+      async () => {
+        await deleteSupplierDb(id); 
+        await fetchSuppliers(); 
+        if (userRole === 'admin') fetchLogs();
+      }
+    );
+  };
 
   const calcCredit = (s: Sale) => (s.dining_card||0)+(s.jahez_bistro||0)+(s.jahez_burger||0)+(s.keeta_bistro||0)+(s.keeta_burger||0)+(s.hunger_station_bistro||0)+(s.hunger_station_burger||0)+(s.ninja||0);
   const calcTotal = (s: Sale) => (s.total_cash_sales||0) + calcCredit(s);
@@ -516,17 +750,25 @@ export default function App() {
       setEditForm(null);
     };
     const cancelEdit = () => { setEditingKey(null); setEditForm(null); };
-    const deleteMonth = async (key: string, source: string) => {
-      if (!confirm('Delete this month entry?')) return;
-      // For manual months, remove from manualMonths
-      if (source === 'manual') {
-        const m = manualMonths.find(i => i.key === key);
-        if (m) await deleteManualMonthData(m);
-      }
-      // For auto/seed, just clear overrides and the row stays (driven by data)
-      // For seed rows with no Firestore data: hide by flagging in overrides
-      const data = { ...(overrides[key] || {}), _hidden: true } as MonthOverrides;
-      await saveOverridesData(key, data);
+    const deleteMonth = (key: string, source: string) => {
+      const monthItem = mergedMonths.find(m => m.key === key);
+      const name = monthItem ? monthItem.month : `Entry (${key})`;
+      requestDelete(
+        'Delete Month Entry',
+        `Are you sure you want to delete or hide the monthly account calculations for: "${name}"? This operation is permanent from manual records.`,
+        'month',
+        async () => {
+          // For manual months, remove from manualMonths
+          if (source === 'manual') {
+            const m = manualMonths.find(i => i.key === key);
+            if (m) await deleteManualMonthData(m);
+          }
+          // For auto/seed, just clear overrides and the row stays (driven by data)
+          // For seed rows with no Firestore data: hide by flagging in overrides
+          const data = { ...(overrides[key] || {}), _hidden: true } as MonthOverrides;
+          await saveOverridesData(key, data);
+        }
+      );
     };
 
     const handleAddMonth = async () => {
@@ -555,9 +797,20 @@ export default function App() {
       await saveExtraData(addExtraForm);
       setAddExtraForm({ name: '', amount: 0, month_key: '' }); setAcPage('extras');
     };
-    const deleteExtra = async (i: number) => {
-      if (!confirm('Delete?')) return;
-      await deleteExtraData(extras[i]);
+    const deleteExtra = (i: number) => {
+      const extraItem = extras[i];
+      const detailsMsg = extraItem
+        ? `Are you sure you want to delete the extra expense "${extraItem.name}" (Amount: SR ${extraItem.amount.toLocaleString()})?`
+        : 'Are you sure you want to delete this extra expense?';
+      
+      requestDelete(
+        'Delete Extra Expense',
+        `${detailsMsg} This action is irreversible.`,
+        'extra_expense',
+        async () => {
+          await deleteExtraData(extras[i]);
+        }
+      );
     };
 
     const sourceBadge = (src: string) => {
@@ -1253,19 +1506,44 @@ export default function App() {
       )}
 
       <nav className="fixed top-0 left-0 h-full w-64 bg-white border-r border-stone-200 p-6 z-10 hidden lg:block shadow-sm">
-        <div className="flex items-center gap-2 mb-12 px-2">
-          <Logo size={56} />
-          <div>
-            <h1 className="text-lg font-black tracking-tight leading-tight">Al Kabir</h1>
-            <p className="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">Bistro</p>
+        <div className="flex flex-col gap-3 mb-10 px-2">
+          <div className="flex items-center gap-2">
+            <Logo size={56} />
+            <div>
+              <h1 className="text-lg font-black tracking-tight leading-tight">Al Kabir</h1>
+              <p className="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">Bistro</p>
+            </div>
           </div>
+          {isOffline && (
+            <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-[10px] font-bold w-fit mt-1">
+              <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse shrink-0" />
+              <span>Offline Database Cache</span>
+            </div>
+          )}
         </div>
-        <div className="space-y-2">
-          {[{id:'sales',label:'Daily Sales',icon:<LayoutDashboard size={20}/>},{id:'expenses',label:'Expenses',icon:<Receipt size={20}/>},{id:'suppliers',label:'Suppliers',icon:<Users size={20}/>}].map(tab=>(
-            <button key={tab.id} onClick={()=>setActiveTab(tab.id as any)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab===tab.id?'bg-emerald-900 text-white font-semibold shadow-md':'text-stone-500 hover:bg-stone-50'}`}>{tab.icon}<span>{tab.label}</span></button>
+        <div className="space-y-1.5">
+          {[
+            { id: 'dashboard', label: 'Dashboard', icon: <TrendingUp size={20} />, activeClass: 'bg-emerald-950 text-white font-bold shadow-md' },
+            { id: 'sales', label: 'Daily Sales', icon: <LayoutDashboard size={20} />, activeClass: 'bg-emerald-900 text-white font-bold shadow-md' },
+            { id: 'expenses', label: 'Expenses', icon: <Receipt size={20} />, activeClass: 'bg-emerald-900 text-white font-bold shadow-md' },
+            { id: 'suppliers', label: 'Suppliers', icon: <Users size={20} />, activeClass: 'bg-emerald-900 text-white font-bold shadow-md' },
+            { id: 'accounts', label: 'Accounts', icon: <BookOpen size={20} />, activeClass: 'bg-blue-700 text-white font-bold shadow-md' },
+            { id: 'logs', label: 'Activity Logs', icon: <History size={20} />, activeClass: 'bg-amber-800 text-white font-bold shadow-md' },
+            { id: 'users', label: 'Team & Permissions', icon: <Shield size={20} />, activeClass: 'bg-stone-800 text-white font-bold shadow-md' }
+          ].filter(tab => isTabAllowed(tab.id)).map(tab => (
+            <button 
+              key={tab.id} 
+              onClick={() => setActiveTab(tab.id as any)} 
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                activeTab === tab.id 
+                  ? tab.activeClass 
+                  : 'text-stone-500 hover:bg-stone-50 hover:text-stone-900'
+              }`}
+            >
+              {tab.icon}
+              <span className="text-xs font-semibold tracking-tight">{tab.label}</span>
+            </button>
           ))}
-          {userRole==='admin'&&(<button onClick={()=>setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab==='dashboard'?'bg-emerald-900 text-white font-semibold shadow-md':'text-stone-500 hover:bg-stone-50'}`}><TrendingUp size={20}/><span>Dashboard</span></button>)}
-          {userRole==='admin'&&(<button onClick={()=>setActiveTab('accounts')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab==='accounts'?'bg-blue-700 text-white font-semibold shadow-md':'text-stone-500 hover:bg-stone-50'}`}><BookOpen size={20}/><span>Accounts</span></button>)}
         </div>
         <div className="absolute bottom-8 left-6 right-6 space-y-4">
           <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200">
@@ -1294,7 +1572,7 @@ export default function App() {
       <main className="lg:pl-64 min-h-screen">
         <header className="sticky top-0 bg-white/80 backdrop-blur-md border-b border-stone-200 px-8 py-6 z-10">
           <div className="flex items-center justify-between mb-4">
-            <div><h2 className="text-2xl font-bold tracking-tight capitalize">{activeTab}</h2><p className="text-sm text-stone-500">Manage your restaurant's financial data</p></div>
+            <div><h2 className="text-2xl font-bold tracking-tight capitalize">{activeTab === 'users' ? 'Team & Permissions' : activeTab}</h2><p className="text-sm text-stone-500">Manage your restaurant's financial data</p></div>
             <div className="flex items-center gap-4">
               <div className="flex items-center bg-white border border-stone-200 rounded-xl px-2 py-1 gap-2 shadow-sm">
                 <Calendar size={16} className="text-stone-400 ml-1"/>
@@ -1438,7 +1716,7 @@ export default function App() {
         </header>
 
         <div className="p-8">
-          {activeTab==='dashboard'?<Dashboard/>:activeTab==='accounts'?<AccountsTab/>:(
+          {activeTab==='dashboard' && isTabAllowed('dashboard')?<Dashboard/>:activeTab==='accounts' && isTabAllowed('accounts')?<AccountsTab/>:activeTab==='logs' && isTabAllowed('logs')?<LogsTab logs={activityLogs} loading={loadingLogs} onRefresh={fetchLogs}/>:activeTab==='users' && isTabAllowed('users')?<UsersTab profiles={userProfiles} loading={loadingProfiles} onRefresh={fetchUserProfiles} requestDelete={requestDelete}/>:(
             <>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                 <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm"><div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg w-fit mb-4"><TrendingUp size={20}/></div><p className="text-stone-500 text-sm font-medium">Total Revenue</p><p className="text-2xl font-bold mt-1">SR {totalSalesSum.toLocaleString()}</p></div>
@@ -1768,6 +2046,66 @@ export default function App() {
 
         </div>
       </main>
+
+      {/* Custom Delete Confirmation Modal */}
+      <AnimatePresence>
+        {deleteConfirm.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setDeleteConfirm(prev => ({ ...prev, isOpen: false }))}
+              className="absolute inset-0 bg-stone-900/60 backdrop-blur-xs"
+            />
+            
+            {/* Modal Box */}
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              transition={{ type: 'spring', duration: 0.4 }}
+              className="relative w-full max-w-md bg-white rounded-3xl border border-stone-200 shadow-2xl p-6 overflow-hidden z-10"
+            >
+              {/* Highlight bar top */}
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-rose-500" />
+              
+              <div className="flex gap-4 items-start mt-2">
+                <div className="w-12 h-12 bg-rose-50 border border-rose-100 rounded-2xl flex items-center justify-center text-rose-600 shrink-0">
+                  <Trash2 size={22} className="stroke-[2.2]" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-stone-900 tracking-tight">
+                    {deleteConfirm.title}
+                  </h3>
+                  <p className="text-xs text-stone-500 mt-2 font-medium leading-relaxed">
+                    {deleteConfirm.description}
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex items-center justify-end gap-3 mt-6 border-t border-stone-100 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirm(prev => ({ ...prev, isOpen: false }))}
+                  className="px-4 py-2 border border-stone-200 text-stone-600 hover:text-stone-900 hover:bg-stone-50 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={deleteConfirm.onConfirm}
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-md hover:shadow-lg hover:shadow-rose-100 transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <Trash2 size={13} className="shrink-0" />
+                  <span>Delete permanently</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -106,6 +106,21 @@
         "data": { "type": "object" }
       },
       "required": ["key", "data"]
+    },
+    "ActivityLog": {
+      "title": "Activity Log",
+      "description": "Log of actions performed by administrators or users.",
+      "type": "object",
+      "properties": {
+        "timestamp": { "type": "string" },
+        "user_email": { "type": "string" },
+        "user_id": { "type": "string" },
+        "action": { "type": "string" },
+        "category": { "type": "string" },
+        "details": { "type": "string" },
+        "item_id": { "type": "string" }
+      },
+      "required": ["timestamp", "user_email", "user_id", "action", "category", "details"]
     }
   },
   "firestore": {
@@ -115,6 +130,7 @@
     "/monthly_cash": { "schema": "MonthlyCash", "description": "Monthly cash reconciliation" },
     "/manual_months": { "schema": "MonthEntry", "description": "Manually added months" },
     "/extra_expenses": { "schema": "ExtraEntry", "description": "One-off extra expenses" },
-    "/month_overrides": { "schema": "MonthOverride", "description": "Admin overrides for months" }
+    "/month_overrides": { "schema": "MonthOverride", "description": "Admin overrides for months" },
+    "/activity_logs": { "schema": "ActivityLog", "description": "Audit trails of admin actions" }
   }
 }
