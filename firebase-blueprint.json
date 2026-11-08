@@ -10,6 +10,8 @@
         "dining_cash": { "type": "number" },
         "total_cash_sales": { "type": "number" },
         "dining_card": { "type": "number" },
+        "delivery_cash": { "type": "number" },
+        "delivery_card": { "type": "number" },
         "jahez_bistro": { "type": "number" },
         "jahez_burger": { "type": "number" },
         "keeta_bistro": { "type": "number" },

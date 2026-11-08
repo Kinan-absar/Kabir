@@ -68,6 +68,7 @@ export default function App() {
   const [expenseFilterCategory, setExpenseFilterCategory] = useState('');
   const [expenseFilterSubCategory, setExpenseFilterSubCategory] = useState('');
   const [salesFilterCategory, setSalesFilterCategory] = useState('');
+  const [showLegacyInMixed, setShowLegacyInMixed] = useState(false);
   
   const [addingHasVat, setAddingHasVat] = useState(true);
   const [editingHasVat, setEditingHasVat] = useState(true);
@@ -303,18 +304,26 @@ export default function App() {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const date = fd.get('date') as string;
+    const isNov = date >= '2026-11-01';
+    const diningCash = Number(fd.get('dining_cash')) || 0;
+    const deliveryCash = Number(fd.get('delivery_cash')) || 0;
+    const totalCash = diningCash + deliveryCash;
+    const diningCard = Number(fd.get('dining_card')) || 0;
+    const deliveryCard = Number(fd.get('delivery_card')) || 0;
     const sale: Sale = {
       date, day: DAYS[new Date(date).getDay()],
-      dining_cash: Number(fd.get('dining_cash')) || 0,
-      total_cash_sales: Number(fd.get('dining_cash')) || 0,
-      dining_card: Number(fd.get('dining_card')) || 0,
-      jahez_bistro: Number(fd.get('jahez_bistro')) || 0,
-      jahez_burger: Number(fd.get('jahez_burger')) || 0,
-      keeta_bistro: Number(fd.get('keeta_bistro')) || 0,
-      keeta_burger: Number(fd.get('keeta_burger')) || 0,
-      hunger_station_bistro: Number(fd.get('hunger_station_bistro')) || 0,
-      hunger_station_burger: Number(fd.get('hunger_station_burger')) || 0,
-      ninja: Number(fd.get('ninja')) || 0,
+      dining_cash: diningCash,
+      total_cash_sales: totalCash,
+      dining_card: diningCard,
+      delivery_cash: deliveryCash,
+      delivery_card: deliveryCard,
+      jahez_bistro: isNov ? 0 : (Number(fd.get('jahez_bistro')) || 0),
+      jahez_burger: isNov ? 0 : (Number(fd.get('jahez_burger')) || 0),
+      keeta_bistro: isNov ? 0 : (Number(fd.get('keeta_bistro')) || 0),
+      keeta_burger: isNov ? 0 : (Number(fd.get('keeta_burger')) || 0),
+      hunger_station_bistro: isNov ? 0 : (Number(fd.get('hunger_station_bistro')) || 0),
+      hunger_station_burger: isNov ? 0 : (Number(fd.get('hunger_station_burger')) || 0),
+      ninja: isNov ? 0 : (Number(fd.get('ninja')) || 0),
       discount: Number(fd.get('discount')) || 0,
       num_customers: Number(fd.get('num_customers')) || 0,
       pos_closing_report: Number(fd.get('pos_closing_report')) || 0,
@@ -432,8 +441,9 @@ export default function App() {
     );
   };
 
-  const calcCredit = (s: Sale) => (s.dining_card||0)+(s.jahez_bistro||0)+(s.jahez_burger||0)+(s.keeta_bistro||0)+(s.keeta_burger||0)+(s.hunger_station_bistro||0)+(s.hunger_station_burger||0)+(s.ninja||0);
-  const calcTotal = (s: Sale) => (s.total_cash_sales||0) + calcCredit(s);
+  const calcCredit = (s: Sale) => (s.dining_card||0) + (s.delivery_card||0) + (s.jahez_bistro||0) + (s.jahez_burger||0) + (s.keeta_bistro||0) + (s.keeta_burger||0) + (s.hunger_station_bistro||0) + (s.hunger_station_burger||0) + (s.ninja||0);
+  const calcCash = (s: Sale) => (s.delivery_cash !== undefined ? ((s.dining_cash||0) + (s.delivery_cash||0)) : (s.total_cash_sales || s.dining_cash || 0));
+  const calcTotal = (s: Sale) => calcCash(s) + calcCredit(s);
   const calcNet = (t: number) => t / 1.15;
   const calcVAT = (t: number) => t - calcNet(t);
   const calcAvg = (t: number, c: number) => c > 0 ? t / c : 0;
@@ -472,7 +482,7 @@ export default function App() {
   });
 
   const totalSalesSum = filteredSales.reduce((a, s) => a + calcTotal(s), 0);
-  const totalCashSalesSum = filteredSales.reduce((a, s) => a + (s.total_cash_sales||0), 0);
+  const totalCashSalesSum = filteredSales.reduce((a, s) => a + calcCash(s), 0);
   const totalExpensesSum = filteredExpenses.reduce((a, e) => a + (e.total||0), 0);
   const totalExpensesExVatSum = filteredExpenses.reduce((a, e) => a + (e.total_debit||0), 0);
   const totalCashExpensesSum = filteredExpenses.reduce((a, e) => a + (e.paid_by?.toLowerCase()==='cash' ? (e.total||0) : 0), 0);
@@ -594,8 +604,8 @@ export default function App() {
       sales.forEach(s => {
         const key = toKey(s.date);
         if (!map[key]) map[key] = { sales: 0, hungr: 0 };
-        const total = (s.total_cash_sales||0)+(s.dining_card||0)+(s.jahez_bistro||0)+(s.jahez_burger||0)+(s.keeta_bistro||0)+(s.keeta_burger||0)+(s.hunger_station_bistro||0)+(s.hunger_station_burger||0)+(s.ninja||0);
-        const delivery = (s.jahez_bistro||0)+(s.jahez_burger||0)+(s.keeta_bistro||0)+(s.keeta_burger||0)+(s.hunger_station_bistro||0)+(s.hunger_station_burger||0)+(s.ninja||0);
+        const total = calcTotal(s);
+        const delivery = (s.delivery_cash||0)+(s.delivery_card||0)+(s.jahez_bistro||0)+(s.jahez_burger||0)+(s.keeta_bistro||0)+(s.keeta_burger||0)+(s.hunger_station_bistro||0)+(s.hunger_station_burger||0)+(s.ninja||0);
         map[key].sales += total;
         map[key].hungr += delivery;
       });
@@ -1237,13 +1247,18 @@ export default function App() {
     const grossProfitMargin = netSales > 0 ? (grossProfit / netSales) * 100 : 0;
     const costRatio = netSales > 0 ? (totalExpensesExVatSum / netSales) * 100 : 0;
     const channels = [
-      { name: 'Dining (Cash)', value: filteredSales.reduce((a,s)=>a+(s.total_cash_sales||0),0) },
+      { name: 'Dining (Cash)', value: filteredSales.reduce((a,s)=>a+(s.dining_cash||0),0) },
       { name: 'Dining (Card)', value: filteredSales.reduce((a,s)=>a+(s.dining_card||0),0) },
+      { name: 'Delivery (Cash)', value: filteredSales.reduce((a,s)=>a+(s.delivery_cash||0),0) },
+      { name: 'Delivery (Card)', value: filteredSales.reduce((a,s)=>a+(s.delivery_card||0),0) },
       { name: 'Jahez Bistro', value: filteredSales.reduce((a,s)=>a+(s.jahez_bistro||0),0) },
       { name: 'Jahez Burger', value: filteredSales.reduce((a,s)=>a+(s.jahez_burger||0),0) },
       { name: 'Keeta Bistro', value: filteredSales.reduce((a,s)=>a+(s.keeta_bistro||0),0) },
       { name: 'Keeta Burger', value: filteredSales.reduce((a,s)=>a+(s.keeta_burger||0),0) },
-    ];
+      { name: 'Hunger Station Bistro', value: filteredSales.reduce((a,s)=>a+(s.hunger_station_bistro||0),0) },
+      { name: 'Hunger Station Burger', value: filteredSales.reduce((a,s)=>a+(s.hunger_station_burger||0),0) },
+      { name: 'Ninja', value: filteredSales.reduce((a,s)=>a+(s.ninja||0),0) },
+    ].filter(c => c.value > 0);
     const weeks = [{name:'Week 1 (1–7)',start:1,end:7},{name:'Week 2 (8–14)',start:8,end:14},{name:'Week 3 (15–21)',start:15,end:21},{name:'Week 4 (22–31)',start:22,end:31}].map(w => {
       const ws = filteredSales.filter(s => { const d=new Date(s.date).getDate(); return d>=w.start&&d<=w.end; });
       return { ...w, total: ws.reduce((a,s)=>a+calcTotal(s),0), customers: ws.reduce((a,s)=>a+(s.num_customers||0),0) };
@@ -1275,21 +1290,31 @@ export default function App() {
 
     // ── Daily Sales Report Data ──
     const dailyReport = filteredSales.map(s => {
+      const isNov = s.date >= '2026-11-01';
       const keetaTotal = ((s.keeta_bistro || 0) + (s.keeta_burger || 0)) * 0.6;
       const hungerTotal = ((s.hunger_station_bistro || 0) + (s.hunger_station_burger || 0)) * 0.6;
       const jahezTotal = ((s.jahez_bistro || 0) + (s.jahez_burger || 0)) * 0.6;
-      const otherTotal = (s.dining_cash || 0) + (s.dining_card || 0) + (s.ninja || 0);
+      const delCash = s.delivery_cash || 0;
+      const delCard = s.delivery_card || 0;
+      const otherTotal = (s.dining_cash || 0) + (s.dining_card || 0) + (s.ninja || 0) + delCash + delCard;
       const adjustedTotal = otherTotal + keetaTotal + hungerTotal + jahezTotal;
       return {
         date: s.date,
+        isNov,
         cash: s.dining_cash || 0,
         card: s.dining_card || 0,
+        delCash,
+        delCard,
         keeta: keetaTotal,
         hunger: hungerTotal,
         jahez: jahezTotal,
         total: adjustedTotal
       };
     }).sort((a, b) => b.date.localeCompare(a.date));
+
+    const hasHistoricalPlatforms = dailyReport.some(r => r.keeta > 0 || r.hunger > 0 || r.jahez > 0);
+    const hasDeliveryColumns = dailyReport.some(r => r.delCash > 0 || r.delCard > 0 || r.isNov);
+    const totalDailyCols = 3 + (hasDeliveryColumns ? 2 : 0) + (hasHistoricalPlatforms ? 3 : 0) + 1;
 
     return (
       <div className="space-y-8 pb-12">
@@ -1319,7 +1344,11 @@ export default function App() {
               Daily Sales Report (Adjusted)
             </h4>
             <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest bg-stone-50 px-3 py-1 rounded-full border border-stone-100">
-              Keeta, Hunger & Jahez @ 60%
+              {hasHistoricalPlatforms && hasDeliveryColumns 
+                ? 'Delivery (Cash/Card) & Historical Apps @ 60%' 
+                : hasDeliveryColumns 
+                  ? 'Delivery (Cash & Card)' 
+                  : 'Keeta, Hunger & Jahez @ 60%'}
             </span>
           </div>
           <div className="overflow-x-auto">
@@ -1329,9 +1358,19 @@ export default function App() {
                   <th className="px-8 py-4">Date</th>
                   <th className="px-8 py-4 text-right">Cash</th>
                   <th className="px-8 py-4 text-right">Card</th>
-                  <th className="px-8 py-4 text-right">Keeta (60%)</th>
-                  <th className="px-8 py-4 text-right">Hunger (60%)</th>
-                  <th className="px-8 py-4 text-right">Jahez (60%)</th>
+                  {hasDeliveryColumns && (
+                    <>
+                      <th className="px-8 py-4 text-right">Del. Cash</th>
+                      <th className="px-8 py-4 text-right">Del. Card</th>
+                    </>
+                  )}
+                  {hasHistoricalPlatforms && (
+                    <>
+                      <th className="px-8 py-4 text-right">Keeta (60%)</th>
+                      <th className="px-8 py-4 text-right">Hunger (60%)</th>
+                      <th className="px-8 py-4 text-right">Jahez (60%)</th>
+                    </>
+                  )}
                   <th className="px-8 py-4 text-right bg-emerald-50/50 text-emerald-700">Adj. Total</th>
                 </tr>
               </thead>
@@ -1341,14 +1380,24 @@ export default function App() {
                     <td className="px-8 py-4 text-xs font-bold text-stone-900">{row.date}</td>
                     <td className="px-8 py-4 text-xs text-right font-mono text-stone-600">SR {row.cash.toFixed(2)}</td>
                     <td className="px-8 py-4 text-xs text-right font-mono text-stone-600">SR {row.card.toFixed(2)}</td>
-                    <td className="px-8 py-4 text-xs text-right font-mono text-stone-600">SR {row.keeta.toFixed(2)}</td>
-                    <td className="px-8 py-4 text-xs text-right font-mono text-stone-600">SR {row.hunger.toFixed(2)}</td>
-                    <td className="px-8 py-4 text-xs text-right font-mono text-stone-600">SR {row.jahez.toFixed(2)}</td>
+                    {hasDeliveryColumns && (
+                      <>
+                        <td className="px-8 py-4 text-xs text-right font-mono text-stone-600">SR {row.delCash.toFixed(2)}</td>
+                        <td className="px-8 py-4 text-xs text-right font-mono text-stone-600">SR {row.delCard.toFixed(2)}</td>
+                      </>
+                    )}
+                    {hasHistoricalPlatforms && (
+                      <>
+                        <td className="px-8 py-4 text-xs text-right font-mono text-stone-600">SR {row.keeta.toFixed(2)}</td>
+                        <td className="px-8 py-4 text-xs text-right font-mono text-stone-600">SR {row.hunger.toFixed(2)}</td>
+                        <td className="px-8 py-4 text-xs text-right font-mono text-stone-600">SR {row.jahez.toFixed(2)}</td>
+                      </>
+                    )}
                     <td className="px-8 py-4 text-xs text-right font-mono font-bold text-emerald-700 bg-emerald-50/30">SR {row.total.toFixed(2)}</td>
                   </tr>
                 ))}
                 {dailyReport.length === 0 && (
-                  <tr><td colSpan={7} className="px-8 py-8 text-center text-stone-400 text-xs">No sales data for this period</td></tr>
+                  <tr><td colSpan={totalDailyCols} className="px-8 py-8 text-center text-stone-400 text-xs">No sales data for this period</td></tr>
                 )}
               </tbody>
               {dailyReport.length > 0 && (
@@ -1357,9 +1406,19 @@ export default function App() {
                     <td className="px-8 py-4 text-[10px] uppercase tracking-widest text-stone-500">Totals</td>
                     <td className="px-8 py-4 text-xs text-right font-mono text-stone-900">SR {dailyReport.reduce((a,b)=>a+b.cash,0).toFixed(2)}</td>
                     <td className="px-8 py-4 text-xs text-right font-mono text-stone-900">SR {dailyReport.reduce((a,b)=>a+b.card,0).toFixed(2)}</td>
-                    <td className="px-8 py-4 text-xs text-right font-mono text-stone-900">SR {dailyReport.reduce((a,b)=>a+b.keeta,0).toFixed(2)}</td>
-                    <td className="px-8 py-4 text-xs text-right font-mono text-stone-900">SR {dailyReport.reduce((a,b)=>a+b.hunger,0).toFixed(2)}</td>
-                    <td className="px-8 py-4 text-xs text-right font-mono text-stone-900">SR {dailyReport.reduce((a,b)=>a+b.jahez,0).toFixed(2)}</td>
+                    {hasDeliveryColumns && (
+                      <>
+                        <td className="px-8 py-4 text-xs text-right font-mono text-stone-900">SR {dailyReport.reduce((a,b)=>a+b.delCash,0).toFixed(2)}</td>
+                        <td className="px-8 py-4 text-xs text-right font-mono text-stone-900">SR {dailyReport.reduce((a,b)=>a+b.delCard,0).toFixed(2)}</td>
+                      </>
+                    )}
+                    {hasHistoricalPlatforms && (
+                      <>
+                        <td className="px-8 py-4 text-xs text-right font-mono text-stone-900">SR {dailyReport.reduce((a,b)=>a+b.keeta,0).toFixed(2)}</td>
+                        <td className="px-8 py-4 text-xs text-right font-mono text-stone-900">SR {dailyReport.reduce((a,b)=>a+b.hunger,0).toFixed(2)}</td>
+                        <td className="px-8 py-4 text-xs text-right font-mono text-stone-900">SR {dailyReport.reduce((a,b)=>a+b.jahez,0).toFixed(2)}</td>
+                      </>
+                    )}
                     <td className="px-8 py-4 text-xs text-right font-mono text-emerald-700 bg-emerald-50/50">SR {dailyReport.reduce((a,b)=>a+b.total,0).toFixed(2)}</td>
                   </tr>
                 </tfoot>
@@ -1450,9 +1509,11 @@ export default function App() {
     );
   };
 
-  const SalesTotals = () => {
-    const dc=filteredSales.reduce((a,r)=>a+(r.total_cash_sales||0),0);
+  const SalesTotals = ({ showNew, showLegacy }: { showNew: boolean; showLegacy: boolean }) => {
+    const dc=filteredSales.reduce((a,r)=>a+(r.dining_cash||0),0);
     const dcard=filteredSales.reduce((a,r)=>a+(r.dining_card||0),0);
+    const delCash=filteredSales.reduce((a,r)=>a+(r.delivery_cash||0),0);
+    const delCard=filteredSales.reduce((a,r)=>a+(r.delivery_card||0),0);
     const jb=filteredSales.reduce((a,r)=>a+(r.jahez_bistro||0),0);
     const jbg=filteredSales.reduce((a,r)=>a+(r.jahez_burger||0),0);
     const kb=filteredSales.reduce((a,r)=>a+(r.keeta_bistro||0),0);
@@ -1460,11 +1521,17 @@ export default function App() {
     const hb=filteredSales.reduce((a,r)=>a+(r.hunger_station_bistro||0),0);
     const hbg=filteredSales.reduce((a,r)=>a+(r.hunger_station_burger||0),0);
     const n=filteredSales.reduce((a,r)=>a+(r.ninja||0),0);
-    const credit=dcard+jb+jbg+kb+kbg+hb+hbg+n;
-    const ts=dc+credit;
+
+    const credit=filteredSales.reduce((a,r)=>a+calcCredit(r),0);
+    const ts=filteredSales.reduce((a,r)=>a+calcTotal(r),0);
     const cust=filteredSales.reduce((a,r)=>a+(r.num_customers||0),0);
+
+    const numericCells: number[] = [dc, dcard];
+    if (showNew) numericCells.push(delCash, delCard);
+    if (showLegacy) numericCells.push(jb, jbg, kb, kbg, hb, hbg, n);
+
     return (<>
-      {[dc,dcard,jb,jbg,kb,kbg,hb,hbg,n].map((v,i)=><td key={i} className="px-2 py-3 text-right border border-stone-200 font-mono">{v.toFixed(2)}</td>)}
+      {numericCells.map((v,i)=><td key={i} className="px-2 py-3 text-right border border-stone-200 font-mono">{v.toFixed(2)}</td>)}
       <td className="px-2 py-3 text-right border border-stone-200 font-mono bg-stone-200/50">{credit.toFixed(2)}</td>
       <td className="px-2 py-3 text-right border border-stone-200 font-mono bg-emerald-100/50 text-emerald-700">{ts.toFixed(2)}</td>
       <td className="px-2 py-3 text-right border border-stone-200 font-mono">{(ts/1.15).toFixed(2)}</td>
@@ -1477,6 +1544,12 @@ export default function App() {
       <td className="px-2 py-3 border border-stone-200"/>
     </>);
   };
+
+  const isNovPeriod = selectedYear > 2026 || (selectedYear === 2026 && (selectedPeriod === '11' || selectedPeriod === '12'));
+  const isHistoricalPeriod = selectedYear < 2026 || (selectedYear === 2026 && Number(selectedPeriod) <= 10 && selectedPeriod !== 'all' && selectedPeriod !== 'Q4');
+  const showNewColumns = isNovPeriod || !isHistoricalPeriod;
+  const showLegacyColumns = isHistoricalPeriod || (!isNovPeriod && showLegacyInMixed);
+  const totalCols = 2 + 2 + (showNewColumns ? 2 : 0) + (showLegacyColumns ? 7 : 0) + 4 + 5 + 1;
 
   // ── Auth gate ─────────────────────────────────────────────────────────────
   if (!authReady) return (
@@ -1618,22 +1691,49 @@ export default function App() {
               </div>
               
               {activeTab === 'sales' && (
-                <select 
-                  value={salesFilterCategory} 
-                  onChange={e => setSalesFilterCategory(e.target.value)}
-                  className="text-xs font-semibold bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5 focus:ring-0 cursor-pointer"
-                >
-                  <option value="">All Categories</option>
-                  <option value="dining_cash">Dining (Cash)</option>
-                  <option value="dining_card">Dining (Card)</option>
-                  <option value="jahez_bistro">Jahez Bistro</option>
-                  <option value="jahez_burger">Jahez Burger</option>
-                  <option value="keeta_bistro">Keeta Bistro</option>
-                  <option value="keeta_burger">Keeta Burger</option>
-                  <option value="hunger_station_bistro">Hunger Station Bistro</option>
-                  <option value="hunger_station_burger">Hunger Station Burger</option>
-                  <option value="ninja">Ninja</option>
-                </select>
+                <div className="flex items-center gap-2">
+                  <select 
+                    value={salesFilterCategory} 
+                    onChange={e => setSalesFilterCategory(e.target.value)}
+                    className="text-xs font-semibold bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5 focus:ring-0 cursor-pointer"
+                  >
+                    <option value="">All Categories</option>
+                    <option value="dining_cash">Dining (Cash)</option>
+                    <option value="dining_card">Dining (Card)</option>
+                    {showNewColumns && (
+                      <>
+                        <option value="delivery_cash">Delivery (Cash)</option>
+                        <option value="delivery_card">Delivery (Card)</option>
+                      </>
+                    )}
+                    {showLegacyColumns && (
+                      <optgroup label="Historical Platforms">
+                        <option value="jahez_bistro">Jahez Bistro</option>
+                        <option value="jahez_burger">Jahez Burger</option>
+                        <option value="keeta_bistro">Keeta Bistro</option>
+                        <option value="keeta_burger">Keeta Burger</option>
+                        <option value="hunger_station_bistro">Hunger Station Bistro</option>
+                        <option value="hunger_station_burger">Hunger Station Burger</option>
+                        <option value="ninja">Ninja</option>
+                      </optgroup>
+                    )}
+                  </select>
+
+                  {!isNovPeriod && !isHistoricalPeriod && (
+                    <button
+                      type="button"
+                      onClick={() => setShowLegacyInMixed(!showLegacyInMixed)}
+                      className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer ${
+                        showLegacyInMixed 
+                          ? 'bg-emerald-900 text-white border-emerald-900 shadow-sm' 
+                          : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'
+                      }`}
+                      title="Toggle visibility of legacy platform columns for pre-November records"
+                    >
+                      {showLegacyInMixed ? 'Hide Legacy Apps' : 'Show Legacy Apps'}
+                    </button>
+                  )}
+                </div>
               )}
 
               {activeTab === 'expenses' && (
@@ -1801,8 +1901,41 @@ export default function App() {
                   <form onSubmit={activeTab==='sales'?handleAddSale:activeTab==='expenses'?handleAddExpense:handleAddSupplier}>
                     <table className="w-full text-left border-collapse border border-stone-200">
                       <thead className="sticky top-0 z-10 bg-stone-50 shadow-sm">
-                        {activeTab==='sales'?(<tr className="border-b border-stone-200">{['Date','Day','Dining(Cash)','Dining(Card)','Jahez Bis','Jahez Bur','Keeta Bis','Keeta Bur','Hunger Bis','Hunger Bur','Ninja','Credit','Total Sales','Net','VAT','Disc','Cust','Avg','POS','Diff','Actions'].map(h=><th key={h} className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">{h}</th>)}</tr>)
-                        :activeTab==='expenses'?(<tr className="border-b border-stone-200">{['Date','Invoice #','Supplier','Item','Category','Sub-Category','VAT Number','Net (ex. VAT)','VAT?','VAT (15%)','Total (inc. VAT)','Paid By','Actions'].map(h=><th key={h} className="px-3 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">{h}</th>)}</tr>)
+                        {activeTab==='sales'?(
+                          <tr className="border-b border-stone-200">
+                            <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Date</th>
+                            <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Day</th>
+                            <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Dining(Cash)</th>
+                            <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Dining(Card)</th>
+                            {showNewColumns && (
+                              <>
+                                <th className="px-2 py-3 text-[11px] font-bold text-emerald-800 uppercase tracking-wider border border-stone-200 whitespace-nowrap bg-emerald-50/50">Deliv(Cash)</th>
+                                <th className="px-2 py-3 text-[11px] font-bold text-emerald-800 uppercase tracking-wider border border-stone-200 whitespace-nowrap bg-emerald-50/50">Deliv(Card)</th>
+                              </>
+                            )}
+                            {showLegacyColumns && (
+                              <>
+                                <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Jahez Bis</th>
+                                <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Jahez Bur</th>
+                                <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Keeta Bis</th>
+                                <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Keeta Bur</th>
+                                <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Hunger Bis</th>
+                                <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Hunger Bur</th>
+                                <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Ninja</th>
+                              </>
+                            )}
+                            <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Credit</th>
+                            <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Total Sales</th>
+                            <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Net</th>
+                            <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">VAT</th>
+                            <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Disc</th>
+                            <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Cust</th>
+                            <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Avg</th>
+                            <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">POS</th>
+                            <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Diff</th>
+                            <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Actions</th>
+                          </tr>
+                        ) :activeTab==='expenses'?(<tr className="border-b border-stone-200">{['Date','Invoice #','Supplier','Item','Category','Sub-Category','VAT Number','Net (ex. VAT)','VAT?','VAT (15%)','Total (inc. VAT)','Paid By','Actions'].map(h=><th key={h} className="px-3 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">{h}</th>)}</tr>)
                         :(<tr className="border-b border-stone-200"><th className="px-3 py-3 text-xs font-bold text-stone-500 uppercase border border-stone-200" colSpan={2}>Supplier Name</th><th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase border border-stone-200" colSpan={2}>VAT Number</th><th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase text-center border border-stone-200" colSpan={2}>Actions</th></tr>)}
                       </thead>
                       <tbody className="divide-y divide-stone-100">
@@ -1814,9 +1947,19 @@ export default function App() {
                               <tr key={sale.id} className="bg-emerald-50/50">
                                 <td className="px-1 py-1 border border-stone-200"><input name="date" type="date" defaultValue={sale.date} required className="w-16 text-xs px-1 py-1 border border-emerald-200 rounded-md"/></td>
                                 <td className="px-1 py-1 border border-stone-200 text-center text-[10px] text-stone-400">Auto</td>
-                                {['dining_cash','dining_card','jahez_bistro','jahez_burger','keeta_bistro','keeta_burger','hunger_station_bistro','hunger_station_burger','ninja'].map(f=>(
-                                  <td key={f} className="px-1 py-1 border border-stone-200"><input name={f} type="number" step="0.01" defaultValue={(sale as any)[f]} className="w-16 text-xs px-1 py-1 border border-emerald-200 rounded-md text-right"/></td>
-                                ))}
+                                <td className="px-1 py-1 border border-stone-200"><input name="dining_cash" type="number" step="0.01" defaultValue={sale.dining_cash} placeholder="0" className="w-16 text-xs px-1 py-1 border border-emerald-200 rounded-md text-right"/></td>
+                                <td className="px-1 py-1 border border-stone-200"><input name="dining_card" type="number" step="0.01" defaultValue={sale.dining_card} placeholder="0" className="w-16 text-xs px-1 py-1 border border-emerald-200 rounded-md text-right"/></td>
+                                {showNewColumns && (
+                                  <>
+                                    <td className="px-1 py-1 border border-stone-200 bg-emerald-50/30"><input name="delivery_cash" type="number" step="0.01" defaultValue={sale.delivery_cash || ''} placeholder="0" className="w-16 text-xs px-1 py-1 border border-emerald-200 rounded-md text-right"/></td>
+                                    <td className="px-1 py-1 border border-stone-200 bg-emerald-50/30"><input name="delivery_card" type="number" step="0.01" defaultValue={sale.delivery_card || ''} placeholder="0" className="w-16 text-xs px-1 py-1 border border-emerald-200 rounded-md text-right"/></td>
+                                  </>
+                                )}
+                                {showLegacyColumns && (
+                                  ['jahez_bistro','jahez_burger','keeta_bistro','keeta_burger','hunger_station_bistro','hunger_station_burger','ninja'].map(f=>(
+                                    <td key={f} className="px-1 py-1 border border-stone-200"><input name={f} type="number" step="0.01" defaultValue={(sale as any)[f]} className="w-16 text-xs px-1 py-1 border border-emerald-200 rounded-md text-right"/></td>
+                                  ))
+                                )}
                                 <td colSpan={4} className="px-1 py-1 border border-stone-200 text-center text-[10px] text-stone-400">Calc</td>
                                 <td className="px-1 py-1 border border-stone-200"><input name="discount" type="number" step="0.01" defaultValue={sale.discount} className="w-14 text-xs px-1 py-1 border border-emerald-200 rounded-md text-right"/></td>
                                 <td className="px-1 py-1 border border-stone-200"><input name="num_customers" type="number" defaultValue={sale.num_customers} className="w-14 text-xs px-1 py-1 border border-emerald-200 rounded-md text-right"/></td>
@@ -1832,13 +1975,23 @@ export default function App() {
                                 <td className="px-2 py-2 text-stone-500 border border-stone-200">{sale.day}</td>
                                 <td className="px-2 py-2 text-right font-mono font-bold border border-stone-200">{(sale.dining_cash||0).toFixed(2)}</td>
                                 <td className="px-2 py-2 text-right font-mono border border-stone-200">{(sale.dining_card||0).toFixed(2)}</td>
-                                <td className="px-2 py-2 text-right font-mono border border-stone-200">{(sale.jahez_bistro||0).toFixed(2)}</td>
-                                <td className="px-2 py-2 text-right font-mono border border-stone-200">{(sale.jahez_burger||0).toFixed(2)}</td>
-                                <td className="px-2 py-2 text-right font-mono border border-stone-200">{(sale.keeta_bistro||0).toFixed(2)}</td>
-                                <td className="px-2 py-2 text-right font-mono border border-stone-200">{(sale.keeta_burger||0).toFixed(2)}</td>
-                                <td className="px-2 py-2 text-right font-mono border border-stone-200">{(sale.hunger_station_bistro||0).toFixed(2)}</td>
-                                <td className="px-2 py-2 text-right font-mono border border-stone-200">{(sale.hunger_station_burger||0).toFixed(2)}</td>
-                                <td className="px-2 py-2 text-right font-mono border border-stone-200">{(sale.ninja||0).toFixed(2)}</td>
+                                {showNewColumns && (
+                                  <>
+                                    <td className="px-2 py-2 text-right font-mono border border-stone-200 bg-emerald-50/10 font-medium text-emerald-950">{(sale.delivery_cash||0).toFixed(2)}</td>
+                                    <td className="px-2 py-2 text-right font-mono border border-stone-200 bg-emerald-50/10 font-medium text-emerald-950">{(sale.delivery_card||0).toFixed(2)}</td>
+                                  </>
+                                )}
+                                {showLegacyColumns && (
+                                  <>
+                                    <td className="px-2 py-2 text-right font-mono border border-stone-200">{(sale.jahez_bistro||0).toFixed(2)}</td>
+                                    <td className="px-2 py-2 text-right font-mono border border-stone-200">{(sale.jahez_burger||0).toFixed(2)}</td>
+                                    <td className="px-2 py-2 text-right font-mono border border-stone-200">{(sale.keeta_bistro||0).toFixed(2)}</td>
+                                    <td className="px-2 py-2 text-right font-mono border border-stone-200">{(sale.keeta_burger||0).toFixed(2)}</td>
+                                    <td className="px-2 py-2 text-right font-mono border border-stone-200">{(sale.hunger_station_bistro||0).toFixed(2)}</td>
+                                    <td className="px-2 py-2 text-right font-mono border border-stone-200">{(sale.hunger_station_burger||0).toFixed(2)}</td>
+                                    <td className="px-2 py-2 text-right font-mono border border-stone-200">{(sale.ninja||0).toFixed(2)}</td>
+                                  </>
+                                )}
                                 <td className="px-2 py-2 text-right font-mono bg-stone-50/50 border border-stone-200">{tc.toFixed(2)}</td>
                                 <td className="px-2 py-2 text-right font-bold text-emerald-700 font-mono bg-emerald-50/50 border border-stone-200">{ts.toFixed(2)}</td>
                                 <td className="px-2 py-2 text-right font-mono border border-stone-200">{calcNet(ts).toFixed(2)}</td>
@@ -1854,11 +2007,21 @@ export default function App() {
                           })}
                           {isAddingSale?(
                             <tr className="bg-emerald-50/30">
-                              <td className="px-1 py-1 border border-stone-200"><input name="date" type="date" required className="w-16 text-xs px-1 py-1 border border-stone-200 rounded-md"/></td>
+                              <td className="px-1 py-1 border border-stone-200"><input name="date" type="date" defaultValue={new Date().toISOString().split('T')[0]} required className="w-16 text-xs px-1 py-1 border border-stone-200 rounded-md"/></td>
                               <td className="px-1 py-1 border border-stone-200 text-center text-[10px] text-stone-400">Auto</td>
-                              {['dining_cash','dining_card','jahez_bistro','jahez_burger','keeta_bistro','keeta_burger','hunger_station_bistro','hunger_station_burger','ninja'].map(f=>(
-                                <td key={f} className="px-1 py-1 border border-stone-200"><input name={f} type="number" step="0.01" placeholder="0" className="w-16 text-xs px-1 py-1 border border-stone-200 rounded-md text-right"/></td>
-                              ))}
+                              <td className="px-1 py-1 border border-stone-200"><input name="dining_cash" type="number" step="0.01" placeholder="0" className="w-16 text-xs px-1 py-1 border border-stone-200 rounded-md text-right"/></td>
+                              <td className="px-1 py-1 border border-stone-200"><input name="dining_card" type="number" step="0.01" placeholder="0" className="w-16 text-xs px-1 py-1 border border-stone-200 rounded-md text-right"/></td>
+                              {showNewColumns && (
+                                <>
+                                  <td className="px-1 py-1 border border-stone-200 bg-emerald-50/30"><input name="delivery_cash" type="number" step="0.01" placeholder="0" className="w-16 text-xs px-1 py-1 border border-stone-200 rounded-md text-right"/></td>
+                                  <td className="px-1 py-1 border border-stone-200 bg-emerald-50/30"><input name="delivery_card" type="number" step="0.01" placeholder="0" className="w-16 text-xs px-1 py-1 border border-stone-200 rounded-md text-right"/></td>
+                                </>
+                              )}
+                              {showLegacyColumns && (
+                                ['jahez_bistro','jahez_burger','keeta_bistro','keeta_burger','hunger_station_bistro','hunger_station_burger','ninja'].map(f=>(
+                                  <td key={f} className="px-1 py-1 border border-stone-200"><input name={f} type="number" step="0.01" placeholder="0" className="w-16 text-xs px-1 py-1 border border-stone-200 rounded-md text-right"/></td>
+                                ))
+                              )}
                               <td colSpan={4} className="px-1 py-1 border border-stone-200 text-center text-[10px] text-stone-400">Calc</td>
                               <td className="px-1 py-1 border border-stone-200"><input name="discount" type="number" step="0.01" placeholder="0" className="w-14 text-xs px-1 py-1 border border-stone-200 rounded-md text-right"/></td>
                               <td className="px-1 py-1 border border-stone-200"><input name="num_customers" type="number" placeholder="0" className="w-14 text-xs px-1 py-1 border border-stone-200 rounded-md text-right"/></td>
@@ -1869,7 +2032,7 @@ export default function App() {
                             </tr>
                           ):(
                             <tr className="hover:bg-stone-50 cursor-pointer" onClick={()=>setIsAddingSale(true)}>
-                              <td colSpan={21} className="px-4 py-3 text-center text-stone-400 text-sm italic"><div className="flex items-center justify-center gap-2"><Plus size={16}/><span>Add New Sale Line</span></div></td>
+                              <td colSpan={totalCols} className="px-4 py-3 text-center text-stone-400 text-sm italic"><div className="flex items-center justify-center gap-2"><Plus size={16}/><span>Add New Sale Line</span></div></td>
                             </tr>
                           )}
                         </>)}
@@ -2022,7 +2185,7 @@ export default function App() {
                       <tfoot className="sticky bottom-0 z-10 bg-stone-50 font-bold text-[11px]">
                         <tr className="bg-stone-100/80">
                           <td colSpan={2} className="px-3 py-3 text-stone-500 uppercase tracking-wider border border-stone-200">Totals</td>
-                          {activeTab==='sales'&&<SalesTotals/>}
+                          {activeTab==='sales'&&<SalesTotals showNew={showNewColumns} showLegacy={showLegacyColumns}/>}
                           {activeTab==='expenses'&&(<>
                             <td className="px-4 py-3 border border-stone-200" colSpan={5}/>
                             <td className="px-4 py-3 text-right border border-stone-200 font-mono">SR {filteredExpenses.reduce((a,e)=>a+(e.total_debit||0),0).toFixed(2)}</td>

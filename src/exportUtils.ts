@@ -2,25 +2,41 @@ import * as XLSX from 'xlsx';
 import { Sale, Expense } from './types';
 
 export const exportSalesToExcel = (sales: Sale[], fileName: string = 'Sales_Report.xlsx') => {
-  const worksheetData = sales.map(sale => ({
-    'Date': sale.date,
-    'Day': sale.day,
-    'Dining (Cash)': sale.dining_cash,
-    'Dining (Card)': sale.dining_card,
-    'Jahez Bistro': sale.jahez_bistro,
-    'Jahez Burger': sale.jahez_burger,
-    'Keeta Bistro': sale.keeta_bistro,
-    'Keeta Burger': sale.keeta_burger,
-    'Hunger Station Bistro': sale.hunger_station_bistro,
-    'Hunger Station Burger': sale.hunger_station_burger,
-    'Ninja': sale.ninja,
-    'Discount': sale.discount,
-    'Num Customers': sale.num_customers,
-    'Opening Cash': sale.opening_cash,
-    'Closing Cash Actual': sale.closing_cash_actual,
-    'POS Closing Report': sale.pos_closing_report,
-    'Total Cash Sales': sale.total_cash_sales,
-  }));
+  const hasHistoricalPlatforms = sales.some(s => 
+    (s.jahez_bistro || 0) + (s.jahez_burger || 0) + (s.keeta_bistro || 0) + 
+    (s.keeta_burger || 0) + (s.hunger_station_bistro || 0) + (s.hunger_station_burger || 0) + 
+    (s.ninja || 0) > 0
+  );
+
+  const worksheetData = sales.map(sale => {
+    const row: Record<string, any> = {
+      'Date': sale.date,
+      'Day': sale.day,
+      'Dining (Cash)': sale.dining_cash || 0,
+      'Dining (Card)': sale.dining_card || 0,
+      'Delivery (Cash)': sale.delivery_cash || 0,
+      'Delivery (Card)': sale.delivery_card || 0,
+    };
+
+    if (hasHistoricalPlatforms) {
+      row['Jahez Bistro'] = sale.jahez_bistro || 0;
+      row['Jahez Burger'] = sale.jahez_burger || 0;
+      row['Keeta Bistro'] = sale.keeta_bistro || 0;
+      row['Keeta Burger'] = sale.keeta_burger || 0;
+      row['Hunger Station Bistro'] = sale.hunger_station_bistro || 0;
+      row['Hunger Station Burger'] = sale.hunger_station_burger || 0;
+      row['Ninja'] = sale.ninja || 0;
+    }
+
+    row['Discount'] = sale.discount || 0;
+    row['Num Customers'] = sale.num_customers || 0;
+    row['Opening Cash'] = sale.opening_cash || 0;
+    row['Closing Cash Actual'] = sale.closing_cash_actual || 0;
+    row['POS Closing Report'] = sale.pos_closing_report || 0;
+    row['Total Cash Sales'] = (sale.dining_cash || 0) + (sale.delivery_cash || 0);
+
+    return row;
+  });
 
   const worksheet = XLSX.utils.json_to_sheet(worksheetData);
   const workbook = XLSX.utils.book_new();
