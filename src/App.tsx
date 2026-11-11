@@ -310,6 +310,7 @@ export default function App() {
     const totalCash = diningCash + deliveryCash;
     const diningCard = Number(fd.get('dining_card')) || 0;
     const deliveryCard = Number(fd.get('delivery_card')) || 0;
+    const deliveryOrders = Number(fd.get('delivery_orders')) || 0;
     const sale: Sale = {
       date, day: DAYS[new Date(date).getDay()],
       dining_cash: diningCash,
@@ -317,6 +318,7 @@ export default function App() {
       dining_card: diningCard,
       delivery_cash: deliveryCash,
       delivery_card: deliveryCard,
+      delivery_orders: deliveryOrders,
       jahez_bistro: isNov ? 0 : (Number(fd.get('jahez_bistro')) || 0),
       jahez_burger: isNov ? 0 : (Number(fd.get('jahez_burger')) || 0),
       keeta_bistro: isNov ? 0 : (Number(fd.get('keeta_bistro')) || 0),
@@ -1514,6 +1516,7 @@ export default function App() {
     const dcard=filteredSales.reduce((a,r)=>a+(r.dining_card||0),0);
     const delCash=filteredSales.reduce((a,r)=>a+(r.delivery_cash||0),0);
     const delCard=filteredSales.reduce((a,r)=>a+(r.delivery_card||0),0);
+    const delOrders=filteredSales.reduce((a,r)=>a+(r.delivery_orders||0),0);
     const jb=filteredSales.reduce((a,r)=>a+(r.jahez_bistro||0),0);
     const jbg=filteredSales.reduce((a,r)=>a+(r.jahez_burger||0),0);
     const kb=filteredSales.reduce((a,r)=>a+(r.keeta_bistro||0),0);
@@ -1526,12 +1529,19 @@ export default function App() {
     const ts=filteredSales.reduce((a,r)=>a+calcTotal(r),0);
     const cust=filteredSales.reduce((a,r)=>a+(r.num_customers||0),0);
 
-    const numericCells: number[] = [dc, dcard];
-    if (showNew) numericCells.push(delCash, delCard);
-    if (showLegacy) numericCells.push(jb, jbg, kb, kbg, hb, hbg, n);
-
     return (<>
-      {numericCells.map((v,i)=><td key={i} className="px-2 py-3 text-right border border-stone-200 font-mono">{v.toFixed(2)}</td>)}
+      <td className="px-2 py-3 text-right border border-stone-200 font-mono">{dc.toFixed(2)}</td>
+      <td className="px-2 py-3 text-right border border-stone-200 font-mono">{dcard.toFixed(2)}</td>
+      {showNew && (
+        <>
+          <td className="px-2 py-3 text-right border-y border-stone-200 border-l-2 border-l-emerald-600 border-r border-r-stone-200 bg-emerald-100/60 font-mono font-bold text-emerald-950">{delCash.toFixed(2)}</td>
+          <td className="px-2 py-3 text-right border border-stone-200 bg-emerald-100/60 font-mono font-bold text-emerald-950">{delCard.toFixed(2)}</td>
+          <td className="px-2 py-3 text-right border-y border-stone-200 border-r-2 border-r-emerald-600 border-l border-l-stone-200 bg-emerald-100/60 font-mono font-bold text-emerald-950">{delOrders}</td>
+        </>
+      )}
+      {showLegacy && [jb, jbg, kb, kbg, hb, hbg, n].map((v, i) => (
+        <td key={i} className="px-2 py-3 text-right border border-stone-200 font-mono">{v.toFixed(2)}</td>
+      ))}
       <td className="px-2 py-3 text-right border border-stone-200 font-mono bg-stone-200/50">{credit.toFixed(2)}</td>
       <td className="px-2 py-3 text-right border border-stone-200 font-mono bg-emerald-100/50 text-emerald-700">{ts.toFixed(2)}</td>
       <td className="px-2 py-3 text-right border border-stone-200 font-mono">{(ts/1.15).toFixed(2)}</td>
@@ -1549,7 +1559,7 @@ export default function App() {
   const isHistoricalPeriod = selectedYear < 2026 || (selectedYear === 2026 && Number(selectedPeriod) <= 10 && selectedPeriod !== 'all' && selectedPeriod !== 'Q4');
   const showNewColumns = isNovPeriod || !isHistoricalPeriod;
   const showLegacyColumns = isHistoricalPeriod || (!isNovPeriod && showLegacyInMixed);
-  const totalCols = 2 + 2 + (showNewColumns ? 2 : 0) + (showLegacyColumns ? 7 : 0) + 4 + 5 + 1;
+  const totalCols = 2 + 2 + (showNewColumns ? 3 : 0) + (showLegacyColumns ? 7 : 0) + 4 + 5 + 1;
 
   // ── Auth gate ─────────────────────────────────────────────────────────────
   if (!authReady) return (
@@ -1704,6 +1714,7 @@ export default function App() {
                       <>
                         <option value="delivery_cash">Delivery (Cash)</option>
                         <option value="delivery_card">Delivery (Card)</option>
+                        <option value="delivery_orders">Delivery Orders</option>
                       </>
                     )}
                     {showLegacyColumns && (
@@ -1909,8 +1920,9 @@ export default function App() {
                             <th className="px-2 py-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider border border-stone-200 whitespace-nowrap">Dining(Card)</th>
                             {showNewColumns && (
                               <>
-                                <th className="px-2 py-3 text-[11px] font-bold text-emerald-800 uppercase tracking-wider border border-stone-200 whitespace-nowrap bg-emerald-50/50">Deliv(Cash)</th>
-                                <th className="px-2 py-3 text-[11px] font-bold text-emerald-800 uppercase tracking-wider border border-stone-200 whitespace-nowrap bg-emerald-50/50">Deliv(Card)</th>
+                                <th className="px-2 py-3 text-[11px] font-black text-emerald-950 uppercase tracking-wider border-y border-stone-200 border-l-2 border-l-emerald-600 border-r border-r-stone-200 whitespace-nowrap bg-emerald-100/70 border-t-2 border-t-emerald-600">Deliv(Cash)</th>
+                                <th className="px-2 py-3 text-[11px] font-black text-emerald-950 uppercase tracking-wider border border-stone-200 whitespace-nowrap bg-emerald-100/70 border-t-2 border-t-emerald-600">Deliv(Card)</th>
+                                <th className="px-2 py-3 text-[11px] font-black text-emerald-950 uppercase tracking-wider border-y border-stone-200 border-r-2 border-r-emerald-600 border-l border-l-stone-200 whitespace-nowrap bg-emerald-100/70 border-t-2 border-t-emerald-600">Deliv Orders</th>
                               </>
                             )}
                             {showLegacyColumns && (
@@ -1951,8 +1963,9 @@ export default function App() {
                                 <td className="px-1 py-1 border border-stone-200"><input name="dining_card" type="number" step="0.01" defaultValue={sale.dining_card} placeholder="0" className="w-16 text-xs px-1 py-1 border border-emerald-200 rounded-md text-right"/></td>
                                 {showNewColumns && (
                                   <>
-                                    <td className="px-1 py-1 border border-stone-200 bg-emerald-50/30"><input name="delivery_cash" type="number" step="0.01" defaultValue={sale.delivery_cash || ''} placeholder="0" className="w-16 text-xs px-1 py-1 border border-emerald-200 rounded-md text-right"/></td>
-                                    <td className="px-1 py-1 border border-stone-200 bg-emerald-50/30"><input name="delivery_card" type="number" step="0.01" defaultValue={sale.delivery_card || ''} placeholder="0" className="w-16 text-xs px-1 py-1 border border-emerald-200 rounded-md text-right"/></td>
+                                    <td className="px-1 py-1 border-y border-stone-200 border-l-2 border-l-emerald-600 border-r border-r-stone-200 bg-emerald-50/50"><input name="delivery_cash" type="number" step="0.01" defaultValue={sale.delivery_cash || ''} placeholder="0" className="w-16 text-xs px-1 py-1 border border-emerald-400 rounded-md text-right bg-white"/></td>
+                                    <td className="px-1 py-1 border border-stone-200 bg-emerald-50/50"><input name="delivery_card" type="number" step="0.01" defaultValue={sale.delivery_card || ''} placeholder="0" className="w-16 text-xs px-1 py-1 border border-emerald-400 rounded-md text-right bg-white"/></td>
+                                    <td className="px-1 py-1 border-y border-stone-200 border-r-2 border-r-emerald-600 border-l border-l-stone-200 bg-emerald-50/50"><input name="delivery_orders" type="number" step="1" defaultValue={sale.delivery_orders || ''} placeholder="0" className="w-14 text-xs px-1 py-1 border border-emerald-400 rounded-md text-right bg-white"/></td>
                                   </>
                                 )}
                                 {showLegacyColumns && (
@@ -1977,8 +1990,9 @@ export default function App() {
                                 <td className="px-2 py-2 text-right font-mono border border-stone-200">{(sale.dining_card||0).toFixed(2)}</td>
                                 {showNewColumns && (
                                   <>
-                                    <td className="px-2 py-2 text-right font-mono border border-stone-200 bg-emerald-50/10 font-medium text-emerald-950">{(sale.delivery_cash||0).toFixed(2)}</td>
-                                    <td className="px-2 py-2 text-right font-mono border border-stone-200 bg-emerald-50/10 font-medium text-emerald-950">{(sale.delivery_card||0).toFixed(2)}</td>
+                                    <td className="px-2 py-2 text-right font-mono border-y border-stone-200 border-l-2 border-l-emerald-600 border-r border-r-stone-200 bg-emerald-50/40 font-semibold text-emerald-950">{(sale.delivery_cash||0).toFixed(2)}</td>
+                                    <td className="px-2 py-2 text-right font-mono border border-stone-200 bg-emerald-50/40 font-semibold text-emerald-950">{(sale.delivery_card||0).toFixed(2)}</td>
+                                    <td className="px-2 py-2 text-right font-mono border-y border-stone-200 border-r-2 border-r-emerald-600 border-l border-l-stone-200 bg-emerald-50/40 font-bold text-emerald-900">{sale.delivery_orders || 0}</td>
                                   </>
                                 )}
                                 {showLegacyColumns && (
@@ -2013,8 +2027,9 @@ export default function App() {
                               <td className="px-1 py-1 border border-stone-200"><input name="dining_card" type="number" step="0.01" placeholder="0" className="w-16 text-xs px-1 py-1 border border-stone-200 rounded-md text-right"/></td>
                               {showNewColumns && (
                                 <>
-                                  <td className="px-1 py-1 border border-stone-200 bg-emerald-50/30"><input name="delivery_cash" type="number" step="0.01" placeholder="0" className="w-16 text-xs px-1 py-1 border border-stone-200 rounded-md text-right"/></td>
-                                  <td className="px-1 py-1 border border-stone-200 bg-emerald-50/30"><input name="delivery_card" type="number" step="0.01" placeholder="0" className="w-16 text-xs px-1 py-1 border border-stone-200 rounded-md text-right"/></td>
+                                  <td className="px-1 py-1 border-y border-stone-200 border-l-2 border-l-emerald-600 border-r border-r-stone-200 bg-emerald-50/50"><input name="delivery_cash" type="number" step="0.01" placeholder="0" className="w-16 text-xs px-1 py-1 border border-emerald-400 rounded-md text-right bg-white"/></td>
+                                  <td className="px-1 py-1 border border-stone-200 bg-emerald-50/50"><input name="delivery_card" type="number" step="0.01" placeholder="0" className="w-16 text-xs px-1 py-1 border border-emerald-400 rounded-md text-right bg-white"/></td>
+                                  <td className="px-1 py-1 border-y border-stone-200 border-r-2 border-r-emerald-600 border-l border-l-stone-200 bg-emerald-50/50"><input name="delivery_orders" type="number" step="1" placeholder="0" className="w-14 text-xs px-1 py-1 border border-emerald-400 rounded-md text-right bg-white"/></td>
                                 </>
                               )}
                               {showLegacyColumns && (

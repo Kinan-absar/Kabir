@@ -8,6 +8,7 @@ export interface Sale {
   dining_card: number;
   delivery_cash?: number;
   delivery_card?: number;
+  delivery_orders?: number;
   jahez_bistro?: number;
   jahez_burger?: number;
   keeta_bistro?: number;

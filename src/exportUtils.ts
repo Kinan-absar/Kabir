@@ -16,6 +16,7 @@ export const exportSalesToExcel = (sales: Sale[], fileName: string = 'Sales_Repo
       'Dining (Card)': sale.dining_card || 0,
       'Delivery (Cash)': sale.delivery_cash || 0,
       'Delivery (Card)': sale.delivery_card || 0,
+      'Delivery Orders': sale.delivery_orders || 0,
     };
 
     if (hasHistoricalPlatforms) {
